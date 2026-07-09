@@ -1,0 +1,19 @@
+node_modules
+.next
+out
+dist
+*.log
+.DS_Store
+.research
+.playwright-mcp
+.ssm-sandbox
+.ssm-run-port
+next-env.d.ts
+.env*.local
+coverage
+
+# Agent
+.claude
+
+# build info
+*.tsbuildinfo

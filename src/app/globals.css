@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background-color: #f8f8f0;
+  color: #725d42;
+  font-family: var(--font-nunito), "Noto Sans SC", -apple-system, "PingFang SC",
+    sans-serif;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A soft dotted "island" texture behind everything. */
+body {
+  background-image: radial-gradient(
+    rgba(121, 79, 39, 0.05) 1.5px,
+    transparent 1.5px
+  );
+  background-size: 22px 22px;
+}
+
+@layer components {
+  /* Pill primary button with the 3D pixel-stack shadow. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-pill px-5 py-2.5
+           font-bold text-sm transition-all duration-100 select-none
+           border-2 cursor-pointer;
+    letter-spacing: 0.02em;
+  }
+  .btn-primary {
+    @apply bg-mint text-white border-mint-active shadow-btn;
+  }
+  .btn-primary:hover {
+    @apply bg-mint-hover shadow-btn-hover -translate-y-px;
+  }
+  .btn-primary:active {
+    @apply bg-mint-active shadow-btn-active translate-y-1;
+  }
+  .btn-default {
+    @apply bg-content text-ink-body border-line shadow-soft;
+  }
+  .btn-default:hover {
+    @apply shadow-soft-hover -translate-y-px;
+  }
+  .btn-danger {
+    @apply bg-status-error text-white border-status-error-active shadow-btn-danger;
+  }
+  .btn-danger:hover {
+    @apply -translate-y-px;
+    box-shadow: 0 6px 0 0 #c94444;
+  }
+  .btn-ghost {
+    @apply bg-transparent text-ink-secondary border-transparent;
+  }
+  .btn-ghost:hover {
+    @apply bg-content text-ink-body;
+  }
+  .btn:disabled {
+    @apply opacity-50 cursor-not-allowed shadow-none translate-y-0;
+  }
+
+  /* Card */
+  .card {
+    @apply bg-content rounded-card border-2 border-line/40 p-5 transition-transform;
+  }
+  .card-hover:hover {
+    @apply -translate-y-0.5 shadow-feature;
+  }
+
+  /* Pill badge */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-chip px-2.5 py-0.5 text-xs font-bold;
+  }
+
+  .input {
+    @apply rounded-pill border-[2.5px] border-line-input bg-white/70 px-4 py-2
+           text-ink-body outline-none transition-colors;
+  }
+  .input:hover {
+    @apply border-line-input-hover;
+  }
+  .input:focus {
+    border-color: #ffcc00;
+    box-shadow: 0 0 0 3px rgba(255, 204, 0, 0.25);
+  }
+
+  /* Rendered SKILL.md / README prose inside the detail dialog. On-theme
+     markdown typography: modest product scale (~1.15 ratio), ink ramp for
+     text, mint reserved for links. */
+  .md-body {
+    @apply text-[15px] leading-relaxed text-ink-body;
+    text-wrap: pretty;
+  }
+  .md-body > :first-child {
+    @apply mt-0;
+  }
+  .md-body h1,
+  .md-body h2,
+  .md-body h3,
+  .md-body h4 {
+    @apply mt-7 mb-3 font-extrabold text-ink-header;
+    text-wrap: balance;
+  }
+  .md-body h1 {
+    @apply text-xl;
+  }
+  .md-body h2 {
+    @apply text-lg border-b border-line/30 pb-1.5;
+  }
+  .md-body h3 {
+    @apply text-base;
+  }
+  .md-body h4 {
+    @apply text-[15px];
+  }
+  .md-body p {
+    @apply my-3;
+  }
+  .md-body ul,
+  .md-body ol {
+    @apply my-3 pl-6 flex flex-col gap-1.5;
+  }
+  .md-body ul {
+    @apply list-disc;
+  }
+  .md-body ol {
+    @apply list-decimal;
+  }
+  .md-body li::marker {
+    @apply text-ink-secondary;
+  }
+  .md-body a {
+    @apply font-bold text-mint-active underline decoration-mint/50 underline-offset-2;
+  }
+  .md-body a:hover {
+    @apply decoration-mint-active;
+  }
+  .md-body code {
+    @apply rounded-[6px] bg-ink-header/[0.07] px-1.5 py-0.5 font-mono text-[0.86em] text-ink-header;
+  }
+  .md-body pre {
+    @apply my-4 overflow-x-auto rounded-bubble border border-line/30 bg-white/80 p-4;
+  }
+  .md-body pre code {
+    @apply block bg-transparent p-0 text-[13px] leading-relaxed;
+  }
+  .md-body blockquote {
+    @apply my-4 rounded-bubble bg-ink-header/[0.04] px-4 py-2 text-ink-secondary;
+  }
+  .md-body blockquote p {
+    @apply my-1;
+  }
+  .md-body table {
+    @apply my-4 w-full border-collapse text-sm;
+  }
+  .md-body th {
+    @apply border-b-2 border-line/40 px-3 py-2 text-left font-extrabold text-ink-header;
+  }
+  .md-body td {
+    @apply border-b border-line/20 px-3 py-2 align-top;
+  }
+  .md-body hr {
+    @apply my-6 border-t-2 border-dashed border-line/30;
+  }
+  .md-body img {
+    @apply max-w-full rounded-bubble;
+  }
+}
