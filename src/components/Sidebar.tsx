@@ -79,7 +79,7 @@ export function Sidebar() {
           );
         })}
         {detected.length === 0 && (
-          <span className="px-3 text-xs text-ink-disabled">…</span>
+          <span className="px-3 text-xs text-ink-disabled">{t("nav_no_agents")}</span>
         )}
       </nav>
 

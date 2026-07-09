@@ -35,4 +35,4 @@ fi
 # Record the port so stop.sh knows what to shut down.
 echo "$PORT" > .ssm-run-port
 
-exec npx next dev -p "$PORT"
+exec npx next dev -p "$PORT" -H 127.0.0.1

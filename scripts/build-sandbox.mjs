@@ -4,7 +4,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const base = path.resolve(".ssm-sandbox");
+// Optional argument overrides where the sandbox tree is built (used by bin/cli.mjs).
+const base = path.resolve(process.argv[2] || ".ssm-sandbox");
 fs.rmSync(base, { recursive: true, force: true });
 const root = path.join(base, "home");
 const dataDir = path.join(base, "data");

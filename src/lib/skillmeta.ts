@@ -19,7 +19,7 @@ export function writeSkillName(dir: string, newName: string): void {
     return;
   }
   const content = fs.readFileSync(mdPath, "utf8");
-  const fm = content.match(/^---\n([\s\S]*?)\n---/);
+  const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   let next: string;
   if (fm) {
     const body = /^name:.*$/m.test(fm[1])
@@ -70,7 +70,7 @@ function findSkillMd(dir: string): string | null {
 }
 
 function parseFrontmatter(content: string): Record<string, unknown> {
-  const m = content.match(/^---\n([\s\S]*?)\n---/);
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return {};
   try {
     const parsed = YAML.parse(m[1]);
@@ -81,7 +81,7 @@ function parseFrontmatter(content: string): Record<string, unknown> {
 }
 
 function firstHeadingOrLine(content: string): string {
-  const body = content.replace(/^---\n[\s\S]*?\n---\n?/, "");
+  const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
   for (const line of body.split("\n")) {
     const t = line.replace(/^#+\s*/, "").trim();
     if (t) return t.slice(0, 200);

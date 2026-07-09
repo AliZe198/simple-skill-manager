@@ -18,7 +18,7 @@ const noto = Noto_Sans_SC({
 });
 
 export const metadata: Metadata = {
-  title: "技能管理台 · Skill Manager",
+  title: "Skill Manager",
   description: "Corral skills across your AI tools",
 };
 

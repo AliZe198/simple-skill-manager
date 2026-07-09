@@ -10,7 +10,7 @@ export default function Error({
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
       <div className="text-6xl">🍂</div>
-      <h2 className="text-xl font-extrabold text-ink-header">出错了 / Something went wrong</h2>
+      <h2 className="text-xl font-extrabold text-ink-header">Something went wrong</h2>
       <p className="max-w-lg break-words font-mono text-xs text-ink-muted">
         {error.message}
       </p>
@@ -18,7 +18,7 @@ export default function Error({
         onClick={reset}
         className="btn btn-primary"
       >
-        🔄 重试 / Retry
+        🔄 Retry
       </button>
     </div>
   );

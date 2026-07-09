@@ -19,6 +19,7 @@ export const DICT = {
   nav_marketplace: { zh: "市场", en: "Marketplace" },
   nav_mcp: { zh: "MCP 总览", en: "MCP Overview" },
   nav_settings: { zh: "设置", en: "Settings" },
+  nav_no_agents: { zh: "未检测到 Agent", en: "No agents detected" },
 
   // actions
   act_import: { zh: "导入", en: "Import" },
@@ -153,6 +154,10 @@ export const DICT = {
   lbl_no_discover: {
     zh: "没有未导入的技能 —— 都收拾干净了 🎉",
     en: "Nothing left to import — all tidy 🎉",
+  },
+  lbl_discover_empty_machine: {
+    zh: "还没发现任何技能。装了 AI 工具的技能后会自动出现在这里，或去「市场」安装。",
+    en: "No skills found yet. They'll show up here once your AI tools have some, or install from the Marketplace.",
   },
   lbl_detected: { zh: "已检测到", en: "Detected" },
   lbl_not_detected: { zh: "未检测到", en: "Not detected" },

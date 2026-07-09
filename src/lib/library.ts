@@ -7,6 +7,7 @@ import { scanAll, groupByHash } from "./scan";
 import { readSkillLock, sourceForNames, repoSlugFromGitUrl } from "./sources";
 import { hashDir, shortHash } from "./hash";
 import { readSkillMeta, writeSkillName } from "./skillmeta";
+import { snapshotLibrary } from "./sync";
 import {
   allSkills,
   getSkill,
@@ -165,6 +166,29 @@ function rmAny(p: string): void {
   }
 }
 
+/**
+ * Link a library skill dir into an agent dir. On Windows a plain dir symlink
+ * needs Developer Mode or admin; a junction needs neither and Node reports it
+ * as a symlink to lstat/realpath, so the rest of the app treats it identically.
+ * If it still fails (e.g. a junction across volumes), surface a plain-language
+ * hint pointing at copy mode instead of a raw EPERM.
+ */
+function createDirLink(target: string, linkPath: string): void {
+  const type = process.platform === "win32" ? "junction" : "dir";
+  try {
+    fs.symlinkSync(target, linkPath, type);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "EPERM" || code === "EACCES" || code === "ENOSYS") {
+      throw new Error(
+        "Couldn't create a symlink for this agent. On Windows, either turn on " +
+          "Developer Mode, or switch this agent to Copy mode in Settings."
+      );
+    }
+    throw e;
+  }
+}
+
 /** Does anything (incl. a dangling symlink) exist at this path? */
 function pathExists(p: string): boolean {
   try {
@@ -228,8 +252,9 @@ export function createTarget(
   // Refuse to clobber an unmanaged skill that happens to share this name.
   if (!existingTargetIsOurs(targetPath, hash, agentId)) {
     throw new Error(
-      `目标已存在且不是本工具管理的，已中止以保护你的文件：\n${targetPath}\n` +
-        `请先手动处理同名技能。`
+      `A skill this tool doesn't manage already exists here, so it was left ` +
+        `untouched to protect your files:\n${targetPath}\n` +
+        `Please resolve the same-named skill manually first.`
     );
   }
   // Clear our own stale link / copy, then write fresh.
@@ -237,7 +262,7 @@ export function createTarget(
   assertWritable(targetPath);
 
   if (agent.linkMode === "symlink") {
-    fs.symlinkSync(rec.central_path, targetPath, "dir");
+    createDirLink(rec.central_path, targetPath);
   } else {
     fs.cpSync(rec.central_path, targetPath, { recursive: true });
   }
@@ -270,7 +295,7 @@ export function syncLocalChange(
   hash: string
 ): { synced: boolean; newHash?: string } {
   const rec = getSkill(hash);
-  if (!rec?.central_path) throw new Error("技能不在库中。");
+  if (!rec?.central_path) throw new Error("The skill is not in the library.");
   const newHash = hashDir(rec.central_path);
   if (newHash === hash) return { synced: false };
   rekeySkill(hash, newHash);
@@ -316,7 +341,8 @@ export function adopt(
   // complete (content hash matches). Protects against a corrupt/partial dest.
   if (hashDir(dest) !== hash) {
     throw new Error(
-      `库副本校验失败（内容哈希不匹配），已中止并保留原文件：\n${dest}`
+      `Library copy failed verification (content hash mismatch); aborted and ` +
+        `kept the original files:\n${dest}`
     );
   }
 
@@ -340,13 +366,20 @@ export function adopt(
     enabled: true,
   });
 
-  // Replace every (non-bundled) occurrence with a target into the library.
+  // Replace every (non-bundled) occurrence with a target into the library. The
+  // bytes are now verified in the library, so if linking one agent fails (e.g.
+  // symlink EPERM on Windows) we keep going: the skill stays safely in the
+  // library (parked for that agent) rather than aborting the whole adoption.
   for (const occ of grouped.occurrences) {
     if (occ.bundled) continue; // leave bundled originals untouched (PRD §11)
     const agent = getAgent(occ.agentId);
     if (!agent) continue;
     rmAny(occ.foundPath);
-    createTarget(hash, occ.agentId);
+    try {
+      createTarget(hash, occ.agentId);
+    } catch {
+      /* leave it parked in the library; user can retry or switch to copy mode */
+    }
   }
 
   return findRow(hash);
@@ -450,6 +483,7 @@ export function removeFromLibrary(hash: string): void {
     deleteSkill(hash);
     return;
   }
+  snapshotLibrary(`before remove-from-library: ${rec.name}`);
   for (const t of targetsFor(hash)) {
     if (fs.existsSync(t.target_path)) {
       assertWritable(t.target_path);
@@ -478,6 +512,7 @@ export function park(hash: string): SkillRow {
 /** Delete a skill: remove targets, library copy, and any un-adopted originals. */
 export function remove(hash: string): void {
   const rec = getSkill(hash);
+  if (rec?.central_path) snapshotLibrary(`before delete: ${rec.name}`);
   for (const t of targetsFor(hash)) removeTarget(hash, t.agent_id);
   if (rec?.central_path) rmAny(rec.central_path);
   else {
@@ -585,7 +620,8 @@ export function duplicateGroups(): DupGroup[] {
  */
 export function mergeDuplicates(keepHash: string, dropHashes: string[]): SkillRow {
   const keep = getSkill(keepHash);
-  if (!keep?.central_path) throw new Error("保留的技能不在库中。");
+  if (!keep?.central_path) throw new Error("The kept skill is not in the library.");
+  snapshotLibrary(`before merge-duplicates: ${keep.name}`);
   for (const dropHash of dropHashes) {
     if (dropHash === keepHash) continue;
     const agentIds = targetsFor(dropHash)
@@ -603,8 +639,8 @@ export function mergeDuplicates(keepHash: string, dropHashes: string[]): SkillRo
 /** Open a skill's library folder in the OS file manager (Finder on macOS). */
 export function revealInFinder(hash: string): { path: string } {
   const rec = getSkill(hash);
-  if (!rec?.central_path) throw new Error("技能不在库中。");
-  if (!fs.existsSync(rec.central_path)) throw new Error("目录不存在。");
+  if (!rec?.central_path) throw new Error("The skill is not in the library.");
+  if (!fs.existsSync(rec.central_path)) throw new Error("The folder does not exist.");
   const cmd =
     process.platform === "darwin"
       ? "open"
@@ -673,9 +709,9 @@ export function setTags(hash: string, tags: string[]): SkillRow {
  */
 export function renameSkill(hash: string, newNameRaw: string): SkillRow {
   const rec = getSkill(hash);
-  if (!rec?.central_path) throw new Error("技能不在库中。");
+  if (!rec?.central_path) throw new Error("The skill is not in the library.");
   const newName = newNameRaw.trim();
-  if (!newName) throw new Error("名字不能为空。");
+  if (!newName) throw new Error("The name can't be empty.");
   const oldDir = rec.central_path;
   const metaName = readSkillMeta(oldDir).name;
 

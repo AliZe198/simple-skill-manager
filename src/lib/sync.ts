@@ -54,6 +54,9 @@ function git(args: string[], opts: { allowFail?: boolean } = {}): string {
     }).trim();
   } catch (e) {
     if (opts.allowFail) return "";
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error("Git isn't installed (or isn't on PATH). Install Git and try again.");
+    }
     const err = e as { stderr?: Buffer | string; message?: string };
     const msg = err.stderr ? err.stderr.toString() : err.message ?? "git failed";
     throw new Error(msg.trim());
@@ -69,6 +72,11 @@ function gh(args: string[], opts: { allowFail?: boolean } = {}): string {
     }).trim();
   } catch (e) {
     if (opts.allowFail) return "";
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(
+        "The GitHub CLI (gh) isn't installed. Install it from https://cli.github.com to use GitHub backup."
+      );
+    }
     const err = e as { stderr?: Buffer | string; message?: string };
     const msg = err.stderr ? err.stderr.toString() : err.message ?? "gh failed";
     throw new Error(msg.trim());
@@ -179,7 +187,7 @@ export function ghLoginStart(): Promise<GhLoginState> {
     if (session.status === "pending")
       session.status = ghAuthed() ? "success" : "error";
     if (session.status === "error" && !session.error)
-      session.error = "GitHub 登录未完成或已过期，请重试。";
+      session.error = "GitHub login didn't finish or has expired. Please try again.";
   });
 
   // Resolve once we have the code, or after a short grace period.
@@ -559,7 +567,7 @@ export function connectToRemote(
       git(["merge", "--abort"], { allowFail: true });
       git(["remote", "remove", "origin"], { allowFail: true }); // retryable
       throw new Error(
-        "云端与本机的技能文件有冲突，已中止合并以保护本地文件。请手动解决后再连接，或改用一个空仓库。"
+        "The cloud and local skill files conflict, so the merge was aborted to protect your local files. Resolve it manually before connecting, or use an empty repo."
       );
     }
     resolveManifestUnion();
@@ -595,7 +603,7 @@ function resolveManifestUnion(): void {
 
 function ghLogin(): string {
   const login = gh(["api", "user", "--jq", ".login"]);
-  if (!login) throw new Error("无法获取 GitHub 用户名，请先 gh auth login");
+  if (!login) throw new Error("Couldn't get your GitHub username. Run `gh auth login` first.");
   return login;
 }
 
@@ -664,7 +672,7 @@ export function connectPreview(opts: ConnectOpts = {}): ConnectPreview {
       ...NO_GH,
       ghReady: true,
       flow: "error",
-      message: "请输入有效的 owner/repo 或仓库链接。",
+      message: "Enter a valid owner/repo or repository URL.",
     };
   const info = inspectRemote(parsed.repoFull);
   let flow: ConnectFlow;
@@ -682,7 +690,7 @@ export function connectPreview(opts: ConnectOpts = {}): ConnectPreview {
     flow,
     message:
       flow === "error"
-        ? `找不到仓库 ${parsed.repoFull}。请检查名称，或改用「新建私有仓库」。`
+        ? `Repository ${parsed.repoFull} not found. Check the name, or use "Create a private repo" instead.`
         : undefined,
   };
 }
@@ -701,10 +709,10 @@ export interface ConnectResult extends SyncStatus {
 export function connect(opts: ConnectOpts = {}): ConnectResult {
   ensureDataDir();
   if (!ghAuthed()) {
-    throw new Error("GitHub 未登录。请先点「用浏览器登录 GitHub」完成连接。");
+    throw new Error('Not signed in to GitHub. Click "Sign in to GitHub with your browser" first.');
   }
   if (isGitRepo() && remoteUrl()) {
-    return { ...syncStatus(), flow: "created", message: "已连接" };
+    return { ...syncStatus(), flow: "created", message: "Connected" };
   }
   const hasContent = librarySkillDirs().length > 0;
 
@@ -728,11 +736,11 @@ export function connect(opts: ConnectOpts = {}): ConnectResult {
 
   // Primary: connect to an existing repo.
   const parsed = parseRepo(opts.repoUrl ?? "");
-  if (!parsed) throw new Error("请输入有效的 owner/repo 或仓库链接。");
+  if (!parsed) throw new Error("Enter a valid owner/repo or repository URL.");
   const info = inspectRemote(parsed.repoFull);
   if (!info.exists) {
     throw new Error(
-      `找不到仓库 ${parsed.repoFull}。请检查名称，或改用「新建私有仓库」。`
+      `Repository ${parsed.repoFull} not found. Check the name, or use "Create a private repo" instead.`
     );
   }
   const { flow, imported, mismatches } = connectToRemote(info.cloneUrl, {
@@ -745,7 +753,7 @@ export function connect(opts: ConnectOpts = {}): ConnectResult {
 
 export function backup(): SyncStatus & { pushed: boolean } {
   if (!isGitRepo() || !remoteUrl())
-    throw new Error("尚未连接 GitHub，请先连接。");
+    throw new Error("Not connected to GitHub yet. Connect first.");
   ensureRepoFiles();
   git(["add", "-A"]);
   const staged = git(["diff", "--cached", "--name-only"], { allowFail: true });
@@ -760,7 +768,7 @@ export function backup(): SyncStatus & { pushed: boolean } {
     const msg = (e as Error).message;
     if (/non-fast-forward|fetch first|rejected|\bbehind\b/i.test(msg))
       throw new Error(
-        "云端有这台机器还没有的改动（可能在别的机器上备份过）。请先「从云端同步」合并，再「立即备份」。你本地的文件没有任何改动。"
+        "The cloud has changes this machine doesn't (maybe backed up from another machine). Use \"Sync from cloud\" to merge first, then \"Back up now\". None of your local files were changed."
       );
     throw e;
   }
@@ -772,7 +780,7 @@ export function pull(): SyncStatus & {
   mismatches: string[];
 } {
   if (!isGitRepo() || !remoteUrl())
-    throw new Error("尚未连接 GitHub，请先连接。");
+    throw new Error("Not connected to GitHub yet. Connect first.");
   // Auto-commit any local changes first so nothing is lost in the merge.
   ensureRepoFiles();
   git(["add", "-A"]);
@@ -790,7 +798,7 @@ export function pull(): SyncStatus & {
     if (/conflict/i.test(msg)) {
       git(["merge", "--abort"], { allowFail: true });
       throw new Error(
-        "云端与本地有冲突，已中止以保护本地文件。请手动解决后再同步。"
+        "The cloud and local versions conflict, so this was aborted to protect your local files. Resolve it manually, then sync again."
       );
     }
     throw e;
@@ -818,11 +826,11 @@ export function restoreFromCloud(): SyncStatus & {
   mismatches: string[];
 } {
   if (!isGitRepo() || !remoteUrl())
-    throw new Error("尚未连接 GitHub，请先连接。");
+    throw new Error("Not connected to GitHub yet. Connect first.");
   // Commit everything first so the about-to-be-discarded state is preserved,
   // then record that tip under a private ref for an easy manual undo:
   //   git -C <library> reset --hard refs/ssm/pre-restore
-  snapshotLibrary("restore 前的本地状态");
+  snapshotLibrary("local state before restore");
   const tip = git(["rev-parse", "HEAD"], { allowFail: true });
   if (tip) git(["update-ref", "refs/ssm/pre-restore", tip], { allowFail: true });
   const branch =

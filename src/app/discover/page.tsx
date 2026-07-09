@@ -249,6 +249,8 @@ export default function DiscoverPage() {
         <ErrorState message={(error as Error).message} onRetry={() => mutate()} />
       ) : isLoading ? (
         <Spinner />
+      ) : (skills ?? []).length === 0 ? (
+        <EmptyState text={t("lbl_discover_empty_machine")} />
       ) : unimported.length === 0 ? (
         <EmptyState text={t("lbl_no_discover")} />
       ) : list.length === 0 ? (

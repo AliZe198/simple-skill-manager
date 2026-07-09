@@ -380,7 +380,19 @@ function adoptDirIntoLibrary(
  * — its whole tree is the skill's content. Local-path remotes (tests) ignore
  * the blob filter with a warning and still work.
  */
+/**
+ * Only ever clone plain http(s) URLs. This rejects git's local-exec transports
+ * (`ext::`, `file://`, `-`-prefixed option injection, ssh, git://) so a crafted
+ * `gitUrl` from an API caller can't run arbitrary commands on the host.
+ */
+export function assertSafeCloneUrl(gitUrl: string): void {
+  if (typeof gitUrl !== "string" || !/^https?:\/\/[^\s]+$/i.test(gitUrl)) {
+    throw new Error(`Refusing to clone unsafe URL: ${gitUrl}`);
+  }
+}
+
 function withClone<T>(gitUrl: string, fn: (tmpRoot: string) => T): T {
+  assertSafeCloneUrl(gitUrl);
   const tmpRoot = path.join(
     dataDir(),
     ".clone-tmp",
@@ -389,8 +401,20 @@ function withClone<T>(gitUrl: string, fn: (tmpRoot: string) => T): T {
   assertWritable(tmpRoot);
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(tmpRoot), { recursive: true });
+  // Keep bytes identical to what the library repo commits (LF), so content
+  // hashes match across machines; allow long paths for deep monorepos on Windows.
+  const HARDEN = [
+    "-c",
+    "protocol.ext.allow=never",
+    "-c",
+    "protocol.file.allow=never",
+    "-c",
+    "core.autocrlf=false",
+    "-c",
+    "core.longpaths=true",
+  ];
   const inRepo = (args: string[], timeout: number) =>
-    execFileSync("git", ["-C", tmpRoot, ...args], {
+    execFileSync("git", ["-C", tmpRoot, ...HARDEN, ...args], {
       stdio: "pipe",
       encoding: "utf8",
       timeout,
@@ -398,7 +422,17 @@ function withClone<T>(gitUrl: string, fn: (tmpRoot: string) => T): T {
   try {
     execFileSync(
       "git",
-      ["clone", "--depth", "1", "--filter=blob:none", "--no-checkout", gitUrl, tmpRoot],
+      [
+        ...HARDEN,
+        "clone",
+        "--depth",
+        "1",
+        "--filter=blob:none",
+        "--no-checkout",
+        "--",
+        gitUrl,
+        tmpRoot,
+      ],
       { stdio: "pipe", timeout: 90000 }
     );
     const paths = inRepo(["ls-tree", "-r", "--name-only", "HEAD"], 60000)
@@ -419,6 +453,11 @@ function withClone<T>(gitUrl: string, fn: (tmpRoot: string) => T): T {
     // Materialize (fetches only the needed blobs when sparse).
     inRepo(["checkout", "HEAD"], 180000);
     return fn(tmpRoot);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error("Git isn't installed (or isn't on PATH). Install Git to install skills from a repo.");
+    }
+    throw e;
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -473,7 +512,7 @@ export function installFromRef(ref: string, agentIds: string[]): SkillRow {
       subpath = segs.slice(2).join("/");
     }
   }
-  if (!owner || !repo) throw new Error("请输入有效的 owner/repo 或 git 链接。");
+  if (!owner || !repo) throw new Error("Enter a valid owner/repo or git URL.");
   const repoFull = `${owner}/${repo}`;
   const gitUrl = `https://github.com/${repoFull}`;
   const name = subpath ? path.basename(subpath) : repo;
@@ -494,6 +533,48 @@ export function installFromRef(ref: string, agentIds: string[]): SkillRow {
 }
 
 /**
+ * Extract a .zip/.skill archive into `dest`, cross-platform. `unzip` isn't on
+ * Windows and `tar` (bsdtar) can't read zips on GNU/Linux, so try both: unzip
+ * first (Linux/macOS), then tar (Windows/macOS). Afterwards verify nothing
+ * escaped `dest` (zip-slip guard), since we no longer rely on unzip's sanitizer.
+ */
+function extractArchive(src: string, dest: string): void {
+  const attempts: Array<[string, string[]]> = [
+    ["unzip", ["-q", "-o", src, "-d", dest]],
+    ["tar", ["-xf", src, "-C", dest]],
+  ];
+  let lastErr: unknown;
+  let ok = false;
+  for (const [cmd, args] of attempts) {
+    try {
+      execFileSync(cmd, args, { timeout: 60000, stdio: "pipe" });
+      ok = true;
+      break;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (!ok) {
+    throw new Error(
+      "Couldn't extract the archive. Please install `unzip` or `tar`, or point at an unzipped folder instead."
+    );
+  }
+  // Zip-slip guard: every extracted path must resolve to inside `dest`.
+  const root = fs.realpathSync(dest);
+  const walk = (dir: string): void => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      const real = fs.realpathSync(p);
+      if (real !== root && !real.startsWith(root + path.sep)) {
+        throw new Error("Archive contains an unsafe path; extraction aborted.");
+      }
+      if (e.isDirectory()) walk(p);
+    }
+  };
+  walk(root);
+}
+
+/**
  * Local install: a folder or a `.zip`/`.skill` archive on disk. With batch,
  * imports every skill dir found; otherwise just the primary one.
  */
@@ -503,7 +584,7 @@ export function installFromLocal(
   opts: { batch?: boolean } = {}
 ): { installed: number; failed: { dir: string; error: string }[] } {
   const src = expandHome(localPath.trim().replace(/^['"]|['"]$/g, ""));
-  if (!src || !fs.existsSync(src)) throw new Error(`路径不存在：${src}`);
+  if (!src || !fs.existsSync(src)) throw new Error(`Path does not exist: ${src}`);
 
   const isArchive = /\.(zip|skill)$/i.test(src);
   let workRoot = src;
@@ -516,17 +597,16 @@ export function installFromLocal(
     );
     assertWritable(tmp);
     fs.mkdirSync(tmp, { recursive: true });
-    // unzip sanitizes paths (no zip-slip); extracted tree stays under tmp.
-    execFileSync("unzip", ["-q", "-o", src, "-d", tmp], { timeout: 60000 });
+    extractArchive(src, tmp);
     workRoot = tmp;
     cleanup = tmp;
   } else if (!fs.statSync(src).isDirectory()) {
-    throw new Error("只支持文件夹或 .zip / .skill 文件。");
+    throw new Error("Only a folder or a .zip / .skill file is supported.");
   }
 
   try {
     const dirs = collectSkillDirs(workRoot, !!opts.batch);
-    if (!dirs.length) throw new Error("没找到包含 SKILL.md 的技能目录。");
+    if (!dirs.length) throw new Error("No skill folder containing a SKILL.md was found.");
     const failed: { dir: string; error: string }[] = [];
     let installed = 0;
     for (const d of dirs) {
@@ -670,7 +750,7 @@ export async function checkAllUpdates(): Promise<UpdateInfo[]> {
                 hasUpdate: false,
                 status: "error",
                 error:
-                  "没能在来源仓库里定位到该技能的目录（可能已改名），未比较版本。",
+                  "Couldn't locate this skill's folder in its source repo (it may have been renamed); versions were not compared.",
               });
               continue;
             }
@@ -715,11 +795,11 @@ export async function updateSkill(
   hash: string
 ): Promise<{ updated: boolean; newHash?: string; source?: string }> {
   const rec = getSkill(hash);
-  if (!rec?.central_path) throw new Error("技能不在库中。");
+  if (!rec?.central_path) throw new Error("The skill is not in the library.");
   const src = resolveSource(rec.git_url);
   if (!src)
     throw new Error(
-      "该技能没有记录来源（git_url），无法更新。请先把它关联到 GitHub 仓库。"
+      "This skill has no recorded source (git_url), so it can't be updated. Link it to a GitHub repo first."
     );
   return withClone(src.gitUrl, (tmp) => {
     const slug = slugOf(rec.name);
@@ -731,7 +811,7 @@ export async function updateSkill(
     // bug). A SKILL.md alone isn't enough (a sibling has one too).
     if (!dirMatchesSkill(dir, slug)) {
       throw new Error(
-        "在来源仓库里没能确定该技能对应的目录（可能是 monorepo 或目录已改名），已中止更新以避免覆盖成别的技能。"
+        "Couldn't determine this skill's folder in its source repo (it may be a monorepo, or the folder was renamed); the update was aborted to avoid overwriting it with a different skill."
       );
     }
     if (hashDir(dir) === hash) return { updated: false, source: src.repoFull };
@@ -739,7 +819,7 @@ export async function updateSkill(
     assertWritable(dest);
     // Snapshot the whole library to git before we replace any files, so a bad
     // update is always one "restore" away. Best-effort; never blocks the update.
-    snapshotLibrary(`更新前快照：${rec.name}`);
+    snapshotLibrary(`before update: ${rec.name}`);
     // Replace contents in place — keep the dir name so symlink targets stay valid.
     for (const e of fs.readdirSync(dest)) {
       fs.rmSync(path.join(dest, e), { recursive: true, force: true });

@@ -2,7 +2,12 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { findSkillDir, resolveSource, dirMatchesSkill } from "./marketplace";
+import {
+  findSkillDir,
+  resolveSource,
+  dirMatchesSkill,
+  assertSafeCloneUrl,
+} from "./marketplace";
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ssm-mkt-"));
@@ -107,5 +112,29 @@ describe("dirMatchesSkill (updateSkill clobber guard)", () => {
     const root = tmp();
     fs.mkdirSync(path.join(root, "sub"), { recursive: true });
     expect(dirMatchesSkill(root, "anything")).toBe(false);
+  });
+});
+
+describe("assertSafeCloneUrl (block git RCE transports)", () => {
+  it("accepts plain http(s) URLs", () => {
+    expect(() => assertSafeCloneUrl("https://github.com/anthropics/skills")).not.toThrow();
+    expect(() => assertSafeCloneUrl("http://example.com/x.git")).not.toThrow();
+  });
+
+  it("rejects the ext:: transport (arbitrary command execution)", () => {
+    expect(() => assertSafeCloneUrl("ext::sh -c whoami")).toThrow();
+  });
+
+  it("rejects file://, ssh, git:// and leading-dash option injection", () => {
+    for (const bad of [
+      "file:///etc/passwd",
+      "git@github.com:owner/repo.git",
+      "git://example.com/x",
+      "--upload-pack=touch /tmp/pwned",
+      "-oProxyCommand=evil",
+      "",
+    ]) {
+      expect(() => assertSafeCloneUrl(bad)).toThrow();
+    }
   });
 });

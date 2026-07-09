@@ -35,39 +35,66 @@ export function db(): Database.Database {
   return d;
 }
 
+/**
+ * Current on-disk schema version. Bump this and append a step to `MIGRATIONS`
+ * whenever the schema changes, so an existing user's ssm.db is upgraded in place
+ * instead of breaking on the next query. Never renumber past steps.
+ */
+const SCHEMA_VERSION = 1;
+
+// Each step's index+1 is its target version; step i runs when user_version < i+1.
+const MIGRATIONS: Array<(d: Database.Database) => void> = [
+  // v1 — initial schema.
+  (d) => {
+    d.exec(`
+      CREATE TABLE IF NOT EXISTS skills (
+        content_hash TEXT PRIMARY KEY,
+        name         TEXT NOT NULL,
+        description  TEXT NOT NULL DEFAULT '',
+        central_path TEXT,
+        provenance   TEXT NOT NULL DEFAULT 'unknown',
+        git_url      TEXT,
+        enabled      INTEGER NOT NULL DEFAULT 1,
+        tags         TEXT NOT NULL DEFAULT '[]',
+        favorited    INTEGER NOT NULL DEFAULT 0,
+        created_at   INTEGER NOT NULL,
+        updated_at   INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS targets (
+        content_hash TEXT NOT NULL,
+        agent_id     TEXT NOT NULL,
+        target_path  TEXT NOT NULL,
+        mode         TEXT NOT NULL,
+        synced_at    INTEGER,
+        source_hash  TEXT,
+        status       TEXT NOT NULL DEFAULT 'ok',
+        PRIMARY KEY (content_hash, agent_id),
+        FOREIGN KEY (content_hash) REFERENCES skills(content_hash) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS favorites (
+        market_id  TEXT PRIMARY KEY,
+        added_at   INTEGER NOT NULL
+      );
+    `);
+  },
+  // v2+ — add new migration steps here, e.g.
+  // (d) => d.exec("ALTER TABLE skills ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;"),
+];
+
 function migrate(d: Database.Database): void {
-  d.exec(`
-    CREATE TABLE IF NOT EXISTS skills (
-      content_hash TEXT PRIMARY KEY,
-      name         TEXT NOT NULL,
-      description  TEXT NOT NULL DEFAULT '',
-      central_path TEXT,
-      provenance   TEXT NOT NULL DEFAULT 'unknown',
-      git_url      TEXT,
-      enabled      INTEGER NOT NULL DEFAULT 1,
-      tags         TEXT NOT NULL DEFAULT '[]',
-      favorited    INTEGER NOT NULL DEFAULT 0,
-      created_at   INTEGER NOT NULL,
-      updated_at   INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS targets (
-      content_hash TEXT NOT NULL,
-      agent_id     TEXT NOT NULL,
-      target_path  TEXT NOT NULL,
-      mode         TEXT NOT NULL,
-      synced_at    INTEGER,
-      source_hash  TEXT,
-      status       TEXT NOT NULL DEFAULT 'ok',
-      PRIMARY KEY (content_hash, agent_id),
-      FOREIGN KEY (content_hash) REFERENCES skills(content_hash) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS favorites (
-      market_id  TEXT PRIMARY KEY,
-      added_at   INTEGER NOT NULL
-    );
-  `);
+  let version = (d.pragma("user_version", { simple: true }) as number) ?? 0;
+  // A pre-versioning DB (created before user_version was set) already has the v1
+  // tables; CREATE TABLE IF NOT EXISTS makes re-running step 1 a safe no-op.
+  for (let i = version; i < MIGRATIONS.length; i++) {
+    d.transaction(() => {
+      MIGRATIONS[i](d);
+      d.pragma(`user_version = ${i + 1}`);
+    })();
+  }
+  version = MIGRATIONS.length;
+  if (version < SCHEMA_VERSION) d.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
 
 export interface SkillRecord {

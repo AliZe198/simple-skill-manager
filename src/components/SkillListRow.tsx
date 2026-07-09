@@ -432,21 +432,38 @@ function MenuItem({
   );
 }
 
-const PRESETS = [
-  "前端",
-  "后端",
-  "UI",
-  "DevOps",
-  "数据",
-  "AI",
-  "编程",
-  "写作",
-  "办公",
-  "研究",
-  "规划",
-  "日常",
-  "实验",
-];
+const PRESETS: Record<"en" | "zh", string[]> = {
+  en: [
+    "frontend",
+    "backend",
+    "UI",
+    "DevOps",
+    "data",
+    "AI",
+    "coding",
+    "writing",
+    "office",
+    "research",
+    "planning",
+    "daily",
+    "experiment",
+  ],
+  zh: [
+    "前端",
+    "后端",
+    "UI",
+    "DevOps",
+    "数据",
+    "AI",
+    "编程",
+    "写作",
+    "办公",
+    "研究",
+    "规划",
+    "日常",
+    "实验",
+  ],
+};
 
 interface TagUniverse {
   tags: { tag: string }[];
@@ -463,7 +480,7 @@ function CompactTagBar({
   tags: string[];
   onChanged: () => void;
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState("");
@@ -479,7 +496,7 @@ function CompactTagBar({
     (universe?.tags ?? []).map((u) => u.tag),
     universe?.order ?? []
   );
-  const pool = universe ? (known.length ? known : PRESETS) : [];
+  const pool = universe ? (known.length ? known : PRESETS[lang]) : [];
   const suggestions = pool.filter((p) => !tags.includes(p));
 
   useEffect(() => {
