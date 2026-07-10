@@ -38,21 +38,19 @@ MCP 配置的**只读总览**。
 
 ```bash
 npx simple-skill-manager             # 指向你真实的家目录（端口 3000）
-npx simple-skill-manager --sandbox   # 先安全试玩：假数据、不碰真实文件
 npx simple-skill-manager --port 4000 # 指定端口
 ```
 
 服务只监听 `127.0.0.1`，别的机器连不上。按 Ctrl+C 停止。
 
-**推荐第一步先跑沙箱。** 这个工具会移动 / 软链 / 拷贝 / 删除 Agent 目录里的文件，
-先在假目录树里把玩（`--sandbox`），确认行为后再正式用。
+首次打开只做**只读扫描、不动任何文件** —— 先给你一份去重清单，再谈移动。
 
 ### 从 git clone 跑（开发用）
 
 ```bash
 ./start.sh              # 生产模式：构建并启动，指向你真实 $HOME（端口 3000）
-./start.sh --sandbox    # 沙箱模式：假数据、不碰真实文件（端口 3210）
 ./dev.sh                # 开发模式：免构建、改代码自动刷新
+./dev.sh --sandbox      # 开发模式 + 沙箱假数据（不碰真实文件）
 ./stop.sh               # 停掉正在运行的服务
 ```
 
@@ -73,7 +71,9 @@ npm run start   # → http://localhost:3000（扫描你真实的 %USERPROFILE%�
 > **Windows 软链权限**：建软链需要开发者模式（设置 → 隐私和安全性 → 开发者选项）或管理员终端。
 > 不想开也行：到设置页把对应 Agent 切成**拷贝模式**，无需任何权限。
 
-## 手动进沙箱
+### 沙箱模式（仅开发用）
+
+一棵一次性的假 agent 目录树，用来改代码时不碰真实文件：
 
 ```bash
 node scripts/build-sandbox.mjs        # 在 .ssm-sandbox/ 造一棵假的 agent 目录树
@@ -114,6 +114,10 @@ npm run typecheck # tsc --noEmit
 ## 技术栈
 
 Next.js 15 (App Router) · TypeScript · Tailwind CSS · better-sqlite3 · SWR · Vitest
+
+## 致谢
+
+界面视觉设计基于 / 参考了 [@guokaigdg](https://github.com/guokaigdg) 的 [animal-island-ui](https://github.com/guokaigdg/animal-island-ui)，在此致谢！
 
 ## 许可证
 

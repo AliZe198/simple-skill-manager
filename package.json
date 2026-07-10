@@ -1,6 +1,6 @@
 {
   "name": "simple-skill-manager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local web app that gathers the skills scattered across your AI coding agents (Claude Code, Codex, Gemini CLI, …) into one deduplicated library, with per-agent enable/disable, MCP overview, marketplace and GitHub sync.",
   "keywords": [
     "skills",

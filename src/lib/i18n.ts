@@ -290,6 +290,7 @@ export const DICT = {
     zh: "指向沙箱目录，随便点，不会动你的真实文件",
     en: "Pointed at a sandbox — safe to click around, real files untouched",
   },
+  banner_dismiss: { zh: "关闭（下次运行会再出现）", en: "Dismiss (returns next run)" },
 
   // error / retry
   err_load: { zh: "加载失败", en: "Failed to load" },

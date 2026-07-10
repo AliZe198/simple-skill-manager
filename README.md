@@ -37,20 +37,19 @@ Requires **Node.js 18+**. The fastest way — no clone, no build:
 
 ```bash
 npx simple-skill-manager             # run against your real home dir (port 3000)
-npx simple-skill-manager --sandbox   # try it safely first: fake data, real files untouched
 npx simple-skill-manager --port 4000 # pick a port
 ```
 
 The server listens on `127.0.0.1` only, so it's never reachable from your network. Stop it with Ctrl+C.
 
-**Recommended first step: sandbox mode.** This tool moves / symlinks / copies / deletes files inside your agent directories, so play with a fake directory tree first (`--sandbox`), then run it for real once you're comfortable.
+The first launch does a **read-only scan and changes nothing** — you get a deduplicated list before anything is moved.
 
 ### From a git clone (for development)
 
 ```bash
 ./start.sh              # production build + run against your real $HOME (port 3000)
-./start.sh --sandbox    # sandbox: fake data, real files untouched (port 3210)
 ./dev.sh                # dev mode: no build step, hot reload
+./dev.sh --sandbox      # dev mode against a throwaway sandbox tree (fake data)
 ./stop.sh               # stop the running server
 ```
 
@@ -69,7 +68,9 @@ npm run start   # → http://localhost:3000 (scans your real %USERPROFILE%)
 
 > **Symlinks on Windows** require Developer Mode (Settings → Privacy & security → For developers) or an admin terminal. Don't want either? Switch agents to **copy mode** in Settings — no special permissions needed.
 
-## Sandbox mode, manually
+### Sandbox mode (development only)
+
+A throwaway fake agent tree for hacking on the app without touching real files:
 
 ```bash
 node scripts/build-sandbox.mjs        # builds a fake agent tree under .ssm-sandbox/
@@ -110,6 +111,10 @@ npm run typecheck # tsc --noEmit
 ## Tech stack
 
 Next.js 15 (App Router) · TypeScript · Tailwind CSS · better-sqlite3 · SWR · Vitest
+
+## Credits
+
+The visual design is based on / inspired by [animal-island-ui](https://github.com/guokaigdg/animal-island-ui) by [@guokaigdg](https://github.com/guokaigdg). Thank you!
 
 ## License
 

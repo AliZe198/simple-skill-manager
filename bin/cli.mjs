@@ -2,7 +2,6 @@
 // Simple Skill Manager — npx launcher.
 //
 //   npx simple-skill-manager               # run against your real $HOME (port 3000)
-//   npx simple-skill-manager --sandbox     # try safely on fake data (port 3210)
 //   npx simple-skill-manager --port 4000
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -18,12 +17,10 @@ const pkg = JSON.parse(fs.readFileSync(path.join(pkgRoot, "package.json"), "utf8
 
 // ---------- args ----------
 const argv = process.argv.slice(2);
-let sandbox = false;
 let port = null;
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
-  if (a === "--sandbox") sandbox = true;
-  else if (a === "--port" || a === "-p") port = Number(argv[++i]);
+  if (a === "--port" || a === "-p") port = Number(argv[++i]);
   else if (a.startsWith("--port=")) port = Number(a.slice(7));
   else if (a === "--version" || a === "-v") {
     console.log(pkg.version);
@@ -33,7 +30,6 @@ for (let i = 0; i < argv.length; i++) {
 
 Usage:
   npx simple-skill-manager               run against your real home dir (port 3000)
-  npx simple-skill-manager --sandbox     safe trial on a fake agent tree (port 3210)
   npx simple-skill-manager --port 4000   pick a port
 
 The server listens on 127.0.0.1 only (not reachable from your network).
@@ -48,7 +44,7 @@ if (port !== null && (!Number.isInteger(port) || port < 1 || port > 65535)) {
   console.error("Invalid --port value.");
   process.exit(1);
 }
-if (port === null) port = sandbox ? 3210 : 3000;
+if (port === null) port = 3000;
 
 // ---------- helpers ----------
 function portFree(p) {
@@ -80,19 +76,7 @@ function nextBin() {
   }
 }
 
-// ---------- sandbox ----------
 const env = { ...process.env };
-if (sandbox) {
-  const base = path.join(os.tmpdir(), `ssm-sandbox-${os.userInfo().username}`);
-  const r = spawnSync(
-    process.execPath,
-    [path.join(pkgRoot, "scripts", "build-sandbox.mjs"), base],
-    { stdio: "inherit" }
-  );
-  if (r.status !== 0) process.exit(r.status ?? 1);
-  env.SSM_AGENT_ROOT = path.join(base, "home");
-  env.SSM_DATA_DIR = path.join(base, "data");
-}
 
 // ---------- build check (npx from git builds via prepare; npm package ships .next) ----------
 if (!fs.existsSync(path.join(pkgRoot, ".next", "BUILD_ID"))) {
@@ -110,11 +94,7 @@ if (!fs.existsSync(path.join(pkgRoot, ".next", "BUILD_ID"))) {
 
 // ---------- start ----------
 const finalPort = await pickPort(port);
-console.log(
-  sandbox
-    ? `\n🏝️  Simple Skill Manager (SANDBOX — fake data, your real files are untouched)`
-    : `\n🏝️  Simple Skill Manager (scanning your real home: ${os.homedir()})`
-);
+console.log(`\n🏝️  Simple Skill Manager (scanning your real home: ${os.homedir()})`);
 console.log(`    http://localhost:${finalPort}\n    Stop with Ctrl+C.\n`);
 
 const child = spawn(
