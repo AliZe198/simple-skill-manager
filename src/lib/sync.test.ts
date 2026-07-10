@@ -35,7 +35,7 @@ async function seedRemote(bare: string, skillName: string) {
   raw(libA, ["init", "-b", "main"]);
   raw(libA, ["remote", "add", "origin", bare]);
   const { backup } = await import("./sync");
-  backup();
+  await backup();
 }
 
 describe("parseRepo", () => {
@@ -60,7 +60,7 @@ describe("connectToRemote (existing-repo flows)", () => {
 
     const { connectToRemote } = await import("./sync");
     const { hashDir } = await import("./hash");
-    const res = connectToRemote(bare, {
+    const res = await connectToRemote(bare, {
       localHasContent: false,
       remoteHasCommits: true,
       defaultBranch: "main",
@@ -82,7 +82,7 @@ describe("connectToRemote (existing-repo flows)", () => {
     importSkill(buildOverview().find((r) => r.name === "impeccable")!.contentHash);
 
     const { connectToRemote } = await import("./sync");
-    const res = connectToRemote(bare, {
+    const res = await connectToRemote(bare, {
       localHasContent: true,
       remoteHasCommits: false,
       defaultBranch: "main",
@@ -105,7 +105,7 @@ describe("connectToRemote (existing-repo flows)", () => {
     importSkill(ov.find((r) => r.name === "google-flights")!.contentHash); // local-only
 
     const { connectToRemote } = await import("./sync");
-    const res = connectToRemote(bare, {
+    const res = await connectToRemote(bare, {
       localHasContent: true,
       remoteHasCommits: true,
       defaultBranch: "main",
@@ -143,13 +143,13 @@ describe("connectToRemote (existing-repo flows)", () => {
     fs.writeFileSync(path.join(libB, "shared", "SKILL.md"), "BBB");
 
     const { connectToRemote } = await import("./sync");
-    expect(() =>
+    await expect(
       connectToRemote(bare, {
         localHasContent: true,
         remoteHasCommits: true,
         defaultBranch: "main",
       })
-    ).toThrow(/冲突|conflict/i);
+    ).rejects.toThrow(/冲突|conflict/i);
     // local file intact
     expect(fs.readFileSync(path.join(libB, "shared", "SKILL.md"), "utf8")).toBe("BBB");
     // origin removed → retryable
@@ -179,7 +179,7 @@ describe("GitHub sync (local bare remote, two-machine sim)", () => {
     raw(libA, ["remote", "add", "origin", bare]);
 
     const { backup } = await import("./sync");
-    backup();
+    await backup();
 
     const hashA = hashDir(path.join(libA, "impeccable"));
     expect(fs.existsSync(path.join(libA, "manifest.json"))).toBe(true);
@@ -232,7 +232,7 @@ describe("GitHub sync (local bare remote, two-machine sim)", () => {
     fs.writeFileSync(path.join(libA, "ssm.db"), "fake");
 
     const { backup } = await import("./sync");
-    backup();
+    await backup();
 
     const tracked = execFileSync("git", ["ls-files"], {
       cwd: libA,
@@ -263,11 +263,11 @@ describe("restoreFromCloud (rollback to cloud — Bug B)", () => {
 
     // pull() can't help: local is ahead, so the merge is a no-op and the
     // clobbered content survives. THIS is the bug.
-    pull();
+    await pull();
     expect(fs.readFileSync(skillMd, "utf8")).toBe("CLOBBERED BY A BUGGY UPDATE");
 
     // restoreFromCloud() hard-resets onto origin → the cloud content is back.
-    const res = restoreFromCloud();
+    const res = await restoreFromCloud();
     expect(res.restoredTo).toBe("origin/main");
     expect(fs.readFileSync(skillMd, "utf8")).toBe(original);
 
@@ -299,7 +299,7 @@ describe("reconcile after sync (cloud-side deletions)", () => {
       raw(libA, ["init", "-b", "main"]);
       raw(libA, ["remote", "add", "origin", bare]);
       const { backup } = await import("./sync");
-      backup();
+      await backup();
     }
 
     // Machine B: connect (clone flow) + enable impeccable for claude-code.
@@ -309,7 +309,7 @@ describe("reconcile after sync (cloud-side deletions)", () => {
     process.env.SSM_DATA_DIR = path.join(Bbase, "data");
     fs.mkdirSync(Bhome, { recursive: true });
     const { connectToRemote, pull } = await import("./sync");
-    connectToRemote(bare, {
+    await connectToRemote(bare, {
       localHasContent: false,
       remoteHasCommits: true,
       defaultBranch: "main",
@@ -327,13 +327,13 @@ describe("reconcile after sync (cloud-side deletions)", () => {
       const { buildOverview: boA, remove } = await import("./library");
       remove(boA().find((r) => r.name === "impeccable")!.contentHash);
       const { backup } = await import("./sync");
-      backup();
+      await backup();
     }
 
     // Machine B: pull → the deletion must fully propagate.
     process.env.SSM_AGENT_ROOT = Bhome;
     process.env.SSM_DATA_DIR = path.join(Bbase, "data");
-    pull();
+    await pull();
     const rowsB = buildOverview();
     // No ghost "未导入" row left behind…
     expect(rowsB.find((r) => r.name === "impeccable")).toBeUndefined();
@@ -361,7 +361,7 @@ describe("connect with leftover snapshot metadata", () => {
     // .git, .gitignore, manifest.json. `git clone` would refuse this dir.
     snapshotLibrary("先有一次快照");
 
-    const res = connectToRemote(bare, {
+    const res = await connectToRemote(bare, {
       localHasContent: false,
       remoteHasCommits: true,
       defaultBranch: "main",
@@ -380,18 +380,18 @@ describe("syncCheck (检查改动)", () => {
     const libA = path.join(process.env.SSM_DATA_DIR!, "library");
     const { syncCheck, backup } = await import("./sync");
 
-    expect(syncCheck().connected).toBe(true);
+    expect((await syncCheck()).connected).toBe(true);
 
     // A local edit → dirty + needs backup.
     fs.writeFileSync(path.join(libA, "impeccable", "SKILL.md"), "CHANGED");
-    const dirty = syncCheck();
+    const dirty = await syncCheck();
     expect(dirty.dirty).toBe(true);
     expect(dirty.needsBackup).toBe(true);
     expect(dirty.changedCount).toBeGreaterThan(0);
 
     // After backup → clean, nothing ahead.
-    backup();
-    const clean = syncCheck();
+    await backup();
+    const clean = await syncCheck();
     expect(clean.needsBackup).toBe(false);
     expect(clean.ahead).toBe(0);
     expect(clean.behind).toBe(0);

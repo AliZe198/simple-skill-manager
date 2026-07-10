@@ -4,7 +4,7 @@ import { detectAgents } from "./agents";
 import { hashDir } from "./hash";
 import { readSkillMeta } from "./skillmeta";
 import { isBundled } from "./classify";
-import { libraryDir, agentRoot } from "./config";
+import { libraryDir, agentRoot, isInsideRoot } from "./config";
 import type { DetectedAgent, Occurrence, OccurrenceKind } from "./types";
 
 export interface RawScan {
@@ -57,8 +57,7 @@ function occurrenceKind(skillPath: string): {
       target = "";
     }
     const lib = path.resolve(libraryDir());
-    const isLib =
-      target && (target === lib || target.startsWith(lib + path.sep));
+    const isLib = !!target && isInsideRoot(lib, target);
     return {
       kind: isLib ? "symlink-to-library" : "symlink-external",
       linkTarget: target,

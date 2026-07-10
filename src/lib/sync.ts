@@ -1,7 +1,13 @@
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import {
+  execFileSync,
+  execFile,
+  spawn,
+  type ChildProcess,
+} from "node:child_process";
+import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
-import { libraryDir, ensureDataDir } from "./config";
+import { libraryDir, ensureDataDir, isInsideRoot } from "./config";
 import { hashDir } from "./hash";
 import {
   allSkills,
@@ -83,8 +89,77 @@ function gh(args: string[], opts: { allowFail?: boolean } = {}): string {
   }
 }
 
-function ghAuthed(): boolean {
-  return gh(["auth", "status"], { allowFail: true }) !== "";
+/**
+ * Async variants of git()/gh() for the SLOW, network-bound calls (clone, fetch,
+ * push, pull, gh api/auth). execFileSync would block Node's single event loop
+ * for the whole call, freezing every other in-flight request (and all browser
+ * tabs) until the network op finishes. Fast local git ops (add/commit/diff)
+ * stay synchronous — they take milliseconds and aren't worth the async churn.
+ */
+const execFileP = promisify(execFile);
+
+async function gitAsync(
+  args: string[],
+  opts: { allowFail?: boolean } = {}
+): Promise<string> {
+  try {
+    const { stdout } = await execFileP("git", [...GIT_ID, ...args], {
+      cwd: libraryDir(),
+      encoding: "utf8",
+      timeout: 180000,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return stdout.trim();
+  } catch (e) {
+    if (opts.allowFail) return "";
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error("Git isn't installed (or isn't on PATH). Install Git and try again.");
+    }
+    const err = e as { stderr?: Buffer | string; message?: string };
+    const msg = err.stderr ? err.stderr.toString() : err.message ?? "git failed";
+    throw new Error(msg.trim());
+  }
+}
+
+async function ghAsync(
+  args: string[],
+  opts: { allowFail?: boolean } = {}
+): Promise<string> {
+  try {
+    const { stdout } = await execFileP("gh", args, {
+      encoding: "utf8",
+      timeout: 120000,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return stdout.trim();
+  } catch (e) {
+    if (opts.allowFail) return "";
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(
+        "The GitHub CLI (gh) isn't installed. Install it from https://cli.github.com to use GitHub backup."
+      );
+    }
+    const err = e as { stderr?: Buffer | string; message?: string };
+    const msg = err.stderr ? err.stderr.toString() : err.message ?? "gh failed";
+    throw new Error(msg.trim());
+  }
+}
+
+// `gh auth status` makes a network call to validate the token (~0.5–2s). It's
+// hit on every syncStatus() (i.e. every Settings poll), so cache the result
+// briefly to avoid blocking the event loop repeatedly. The login flow passes
+// force=true to bypass the cache when it needs the real, current state.
+let _ghAuthCache: { at: number; ok: boolean } | null = null;
+const GH_AUTH_TTL = 5000;
+
+function ghAuthed(force = false): boolean {
+  const now = Date.now();
+  if (!force && _ghAuthCache && now - _ghAuthCache.at < GH_AUTH_TTL) {
+    return _ghAuthCache.ok;
+  }
+  const ok = gh(["auth", "status"], { allowFail: true }) !== "";
+  _ghAuthCache = { at: now, ok };
+  return ok;
 }
 
 /* --- OAuth-like browser login via `gh auth login --web` --------------- *
@@ -183,9 +258,9 @@ export function ghLoginStart(): Promise<GhLoginState> {
     session.error = (e as Error).message;
   });
   child.on("exit", () => {
-    // Don't trust the exit code — re-check the real goal state.
+    // Don't trust the exit code — re-check the real goal state (bypass cache).
     if (session.status === "pending")
-      session.status = ghAuthed() ? "success" : "error";
+      session.status = ghAuthed(true) ? "success" : "error";
     if (session.status === "error" && !session.error)
       session.error = "GitHub login didn't finish or has expired. Please try again.";
   });
@@ -216,8 +291,9 @@ export function ghLoginStatus(): GhLoginState {
       ghReady: ready,
     };
   }
-  // The token may land before the child object notices; check the goal state.
-  if (s.status === "pending" && ghAuthed()) s.status = "success";
+  // The token may land before the child object notices; check the goal state
+  // fresh (bypass cache) so an active login is detected without a stale delay.
+  if (s.status === "pending" && ghAuthed(true)) s.status = "success";
   return {
     code: s.code,
     verificationUrl: s.verificationUrl,
@@ -370,7 +446,7 @@ function reconcileDeleted(): { removed: number } {
     if (!s.central_path) continue;
     const cp = path.resolve(s.central_path);
     // Only reconcile rows that live inside THIS library (paranoia guard).
-    if (cp !== lib && !cp.startsWith(lib + path.sep)) continue;
+    if (!isInsideRoot(lib, cp)) continue;
     if (fs.existsSync(cp)) continue;
     for (const t of targetsFor(s.content_hash)) {
       try {
@@ -461,8 +537,8 @@ interface RemoteInfo {
   cloneUrl: string;
 }
 
-function inspectRemote(repoFull: string): RemoteInfo {
-  const json = gh(
+async function inspectRemote(repoFull: string): Promise<RemoteInfo> {
+  const json = await ghAsync(
     ["repo", "view", repoFull, "--json", "isPrivate,defaultBranchRef,url"],
     { allowFail: true }
   );
@@ -502,14 +578,14 @@ function inspectRemote(repoFull: string): RemoteInfo {
  * Handles: clone (local empty + remote has commits), push-to-empty, and the
  * unrelated-histories MERGE (both have skills) with abort-on-conflict.
  */
-export function connectToRemote(
+export async function connectToRemote(
   cloneUrl: string,
   opts: {
     localHasContent: boolean;
     remoteHasCommits: boolean;
     defaultBranch: string;
   }
-): { flow: "cloned" | "pushToEmpty" | "merge"; imported: number; mismatches: string[] } {
+): Promise<{ flow: "cloned" | "pushToEmpty" | "merge"; imported: number; mismatches: string[] }> {
   const { localHasContent, remoteHasCommits, defaultBranch } = opts;
   ensureDataDir();
 
@@ -522,7 +598,7 @@ export function connectToRemote(
     if (!isGitRepo()) git(["init", "-b", defaultBranch]);
     git(["remote", "remove", "origin"], { allowFail: true });
     git(["remote", "add", "origin", cloneUrl]);
-    git(["fetch", "origin"]);
+    await gitAsync(["fetch", "origin"]);
     git(["checkout", "-f", "-B", defaultBranch, `origin/${defaultBranch}`]);
     git(
       ["branch", `--set-upstream-to=origin/${defaultBranch}`, defaultBranch],
@@ -538,12 +614,12 @@ export function connectToRemote(
   git(["remote", "add", "origin", cloneUrl]);
 
   if (!remoteHasCommits) {
-    git(["push", "-u", "origin", `HEAD:${defaultBranch}`]);
+    await gitAsync(["push", "-u", "origin", `HEAD:${defaultBranch}`]);
     return { flow: "pushToEmpty", imported: 0, mismatches: [] };
   }
 
   // Both sides have history → merge unrelated histories.
-  git(["fetch", "origin"]);
+  await gitAsync(["fetch", "origin"]);
   try {
     git([
       "merge",
@@ -574,7 +650,7 @@ export function connectToRemote(
     git(["add", MANIFEST]);
     git(["commit", "--no-edit"]);
   }
-  git(["push", "-u", "origin", `HEAD:${defaultBranch}`]);
+  await gitAsync(["push", "-u", "origin", `HEAD:${defaultBranch}`]);
   const r = importManifest();
   return { flow: "merge", ...r };
 }
@@ -601,8 +677,8 @@ function resolveManifestUnion(): void {
   );
 }
 
-function ghLogin(): string {
-  const login = gh(["api", "user", "--jq", ".login"]);
+async function ghLogin(): Promise<string> {
+  const login = await ghAsync(["api", "user", "--jq", ".login"]);
   if (!login) throw new Error("Couldn't get your GitHub username. Run `gh auth login` first.");
   return login;
 }
@@ -645,7 +721,7 @@ const NO_GH: ConnectPreview = {
 };
 
 /** Dry run for the confirm dialog: what WILL happen, touching nothing. */
-export function connectPreview(opts: ConnectOpts = {}): ConnectPreview {
+export async function connectPreview(opts: ConnectOpts = {}): Promise<ConnectPreview> {
   ensureDataDir();
   if (!ghAuthed()) return NO_GH;
   const skillCount = librarySkillDirs().length;
@@ -653,7 +729,7 @@ export function connectPreview(opts: ConnectOpts = {}): ConnectPreview {
 
   // Create-new fallback.
   if (opts.create) {
-    const repoFull = `${ghLogin()}/${opts.repoName || "my-skills"}`;
+    const repoFull = `${await ghLogin()}/${opts.repoName || "my-skills"}`;
     return {
       ghReady: true,
       repoFull,
@@ -674,7 +750,7 @@ export function connectPreview(opts: ConnectOpts = {}): ConnectPreview {
       flow: "error",
       message: "Enter a valid owner/repo or repository URL.",
     };
-  const info = inspectRemote(parsed.repoFull);
+  const info = await inspectRemote(parsed.repoFull);
   let flow: ConnectFlow;
   if (!info.exists) flow = "error";
   else if (!info.hasCommits) flow = "pushToEmpty";
@@ -706,7 +782,7 @@ export interface ConnectResult extends SyncStatus {
  * Primary path: connect to an EXISTING repo (clone / push-to-empty / merge).
  * Fallback: create a new private repo. See connectToRemote for the git flows.
  */
-export function connect(opts: ConnectOpts = {}): ConnectResult {
+export async function connect(opts: ConnectOpts = {}): Promise<ConnectResult> {
   ensureDataDir();
   if (!ghAuthed()) {
     throw new Error('Not signed in to GitHub. Click "Sign in to GitHub with your browser" first.');
@@ -720,7 +796,7 @@ export function connect(opts: ConnectOpts = {}): ConnectResult {
   if (opts.create) {
     const repoName = opts.repoName || "my-skills";
     ensureInitialCommit();
-    gh([
+    await ghAsync([
       "repo",
       "create",
       repoName,
@@ -737,13 +813,13 @@ export function connect(opts: ConnectOpts = {}): ConnectResult {
   // Primary: connect to an existing repo.
   const parsed = parseRepo(opts.repoUrl ?? "");
   if (!parsed) throw new Error("Enter a valid owner/repo or repository URL.");
-  const info = inspectRemote(parsed.repoFull);
+  const info = await inspectRemote(parsed.repoFull);
   if (!info.exists) {
     throw new Error(
       `Repository ${parsed.repoFull} not found. Check the name, or use "Create a private repo" instead.`
     );
   }
-  const { flow, imported, mismatches } = connectToRemote(info.cloneUrl, {
+  const { flow, imported, mismatches } = await connectToRemote(info.cloneUrl, {
     localHasContent: hasContent,
     remoteHasCommits: info.hasCommits,
     defaultBranch: info.defaultBranch,
@@ -751,7 +827,7 @@ export function connect(opts: ConnectOpts = {}): ConnectResult {
   return { ...syncStatus(), flow, imported, mismatches };
 }
 
-export function backup(): SyncStatus & { pushed: boolean } {
+export async function backup(): Promise<SyncStatus & { pushed: boolean }> {
   if (!isGitRepo() || !remoteUrl())
     throw new Error("Not connected to GitHub yet. Connect first.");
   ensureRepoFiles();
@@ -763,7 +839,7 @@ export function backup(): SyncStatus & { pushed: boolean } {
   // that one rough edge (a raw non-fast-forward git error) into a clear,
   // reassuring, actionable message.
   try {
-    git(["push", "origin", "HEAD"]);
+    await gitAsync(["push", "origin", "HEAD"]);
   } catch (e) {
     const msg = (e as Error).message;
     if (/non-fast-forward|fetch first|rejected|\bbehind\b/i.test(msg))
@@ -775,10 +851,12 @@ export function backup(): SyncStatus & { pushed: boolean } {
   return { ...syncStatus(), pushed: !!staged };
 }
 
-export function pull(): SyncStatus & {
-  imported: number;
-  mismatches: string[];
-} {
+export async function pull(): Promise<
+  SyncStatus & {
+    imported: number;
+    mismatches: string[];
+  }
+> {
   if (!isGitRepo() || !remoteUrl())
     throw new Error("Not connected to GitHub yet. Connect first.");
   // Auto-commit any local changes first so nothing is lost in the merge.
@@ -792,7 +870,7 @@ export function pull(): SyncStatus & {
   const branch =
     git(["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true }) || "main";
   try {
-    git(["pull", "--no-rebase", "origin", branch]);
+    await gitAsync(["pull", "--no-rebase", "origin", branch]);
   } catch (e) {
     const msg = (e as Error).message;
     if (/conflict/i.test(msg)) {
@@ -820,11 +898,13 @@ export function pull(): SyncStatus & {
  * (incl. untracked files) and stash the pre-restore tip under refs/ssm/pre-
  * restore, so the discard is itself fully reversible.
  */
-export function restoreFromCloud(): SyncStatus & {
-  restoredTo: string;
-  imported: number;
-  mismatches: string[];
-} {
+export async function restoreFromCloud(): Promise<
+  SyncStatus & {
+    restoredTo: string;
+    imported: number;
+    mismatches: string[];
+  }
+> {
   if (!isGitRepo() || !remoteUrl())
     throw new Error("Not connected to GitHub yet. Connect first.");
   // Commit everything first so the about-to-be-discarded state is preserved,
@@ -835,7 +915,7 @@ export function restoreFromCloud(): SyncStatus & {
   if (tip) git(["update-ref", "refs/ssm/pre-restore", tip], { allowFail: true });
   const branch =
     git(["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true }) || "main";
-  git(["fetch", "origin"]);
+  await gitAsync(["fetch", "origin"]);
   git(["reset", "--hard", `origin/${branch}`]);
   const { imported, mismatches } = importManifest();
   return { ...syncStatus(), restoredTo: `origin/${branch}`, imported, mismatches };
@@ -857,7 +937,7 @@ export interface SyncCheck {
  * favorites) still counts, then fetches origin to report ahead/behind. Read-
  * only intent; the only write is the (idempotent) manifest/repo files.
  */
-export function syncCheck(): SyncCheck {
+export async function syncCheck(): Promise<SyncCheck> {
   const idle: SyncCheck = {
     connected: false,
     dirty: false,
@@ -880,7 +960,7 @@ export function syncCheck(): SyncCheck {
   const changedSample = lines.slice(0, 8).map((l) => l.replace(/^\S+\s+/, ""));
 
   // Compare against the latest cloud tip.
-  git(["fetch", "origin"], { allowFail: true });
+  await gitAsync(["fetch", "origin"], { allowFail: true });
   const branch =
     git(["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true }) || "main";
   const counts = git(

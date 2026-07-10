@@ -1,13 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { libraryDir, assertWritable, agentRoot, loadConfig, saveConfig } from "./config";
+import { libraryDir, assertWritable, agentRoot, loadConfig, saveConfig, isInsideRoot } from "./config";
 import { detectAgents, getAgent } from "./agents";
 import { scanAll, groupByHash } from "./scan";
 import { readSkillLock, sourceForNames, repoSlugFromGitUrl } from "./sources";
 import { hashDir, shortHash } from "./hash";
 import { readSkillMeta, writeSkillName } from "./skillmeta";
-import { snapshotLibrary } from "./sync";
+import { snapshotLibrary, importManifest } from "./sync";
 import {
   allSkills,
   getSkill,
@@ -36,6 +36,18 @@ import type {
  * --------------------------------------------------------------------- */
 
 export function buildOverview(): SkillRow[] {
+  // Self-heal after a lost DB: if the SQLite file was deleted (or corrupted and
+  // recreated empty) but the library files + manifest survived, rebuild the
+  // records — provenance, tags, and origins — from manifest.json before the
+  // scan. No-op on a genuinely first run (no manifest yet) and once populated.
+  if (allSkills().length === 0) {
+    try {
+      importManifest();
+    } catch {
+      /* best-effort recovery; a fresh scan still works without it */
+    }
+  }
+
   const grouped = groupByHash(scanAll());
   const byHash = new Map(grouped.map((g) => [g.hash, g]));
   const dbSkills = allSkills();
@@ -222,7 +234,7 @@ function existingTargetIsOurs(
     if (fs.lstatSync(targetPath).isSymbolicLink()) {
       const real = fs.realpathSync(targetPath);
       const lib = path.resolve(libraryDir());
-      return real === lib || real.startsWith(lib + path.sep);
+      return isInsideRoot(lib, real);
     }
   } catch {
     return true;

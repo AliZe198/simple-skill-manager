@@ -20,10 +20,11 @@ describe("schema versioning", () => {
   it("stamps user_version on a fresh DB and creates the tables", () => {
     const d = db();
     expect(d.pragma("user_version", { simple: true })).toBeGreaterThanOrEqual(1);
-    const tables = d
-      .prepare("SELECT name FROM sqlite_master WHERE type='table'")
-      .all()
-      .map((r: { name: string }) => r.name);
+    const tables = (
+      d.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+        name: string;
+      }[]
+    ).map((r) => r.name);
     expect(tables).toEqual(expect.arrayContaining(["skills", "targets", "favorites"]));
   });
 

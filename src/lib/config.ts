@@ -70,6 +70,22 @@ function realPathSafe(p: string): string {
 }
 
 /**
+ * Is `target` the same as, or nested inside, `root`? Case-insensitive on
+ * Windows (NTFS is case-insensitive, and a user-typed `c:\users\…` won't match
+ * a realpath-canonicalized `C:\Users\…` byte-for-byte). Both paths should
+ * already be resolved/realpathed by the caller.
+ */
+export function isInsideRoot(root: string, target: string): boolean {
+  let r = root;
+  let t = target;
+  if (process.platform === "win32") {
+    r = r.toLowerCase();
+    t = t.toLowerCase();
+  }
+  return t === r || t.startsWith(r + path.sep);
+}
+
+/**
  * Guard: throw if a path escapes the directories we are allowed to touch.
  * Compares REAL paths (symlinks resolved) so a symlinked managed root — e.g.
  * ~/.claude -> ~/dotfiles/claude — cannot be used to write outside the root.
@@ -77,9 +93,7 @@ function realPathSafe(p: string): string {
 export function assertWritable(target: string): void {
   const real = realPathSafe(target);
   const roots = [realPathSafe(agentRoot()), realPathSafe(dataDir())];
-  const ok = roots.some(
-    (root) => real === root || real.startsWith(root + path.sep)
-  );
+  const ok = roots.some((root) => isInsideRoot(root, real));
   if (!ok) {
     throw new Error(
       `Refusing to write outside managed roots: ${real}\n` +

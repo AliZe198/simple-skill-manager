@@ -27,7 +27,16 @@ export async function POST(req: NextRequest) {
   const action = String(body.action || "");
   const agentIds = Array.isArray(body.agentIds) ? body.agentIds.map(String) : [];
   if (action === "install") {
-    return handle(() => installFromMarket(body.skill as MarketSkill, agentIds));
+    const skill = body.skill;
+    if (
+      !skill ||
+      typeof skill !== "object" ||
+      typeof (skill as MarketSkill).gitUrl !== "string" ||
+      typeof (skill as MarketSkill).name !== "string"
+    ) {
+      return fail("Invalid skill payload.");
+    }
+    return handle(() => installFromMarket(skill as MarketSkill, agentIds));
   }
   if (action === "installGit") {
     return handle(() => installFromRef(String(body.ref || ""), agentIds));

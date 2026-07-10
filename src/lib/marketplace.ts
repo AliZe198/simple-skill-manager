@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -16,6 +17,8 @@ import {
 import { createTarget, buildOverview, libraryDestFor } from "./library";
 import { snapshotLibrary } from "./sync";
 import type { Provenance, SkillRow } from "./types";
+
+const execFileP = promisify(execFile);
 
 export interface MarketSkill {
   id: string; // owner/repo/subpath
@@ -391,7 +394,10 @@ export function assertSafeCloneUrl(gitUrl: string): void {
   }
 }
 
-function withClone<T>(gitUrl: string, fn: (tmpRoot: string) => T): T {
+async function withClone<T>(
+  gitUrl: string,
+  fn: (tmpRoot: string) => T | Promise<T>
+): Promise<T> {
   assertSafeCloneUrl(gitUrl);
   const tmpRoot = path.join(
     dataDir(),
@@ -413,14 +419,19 @@ function withClone<T>(gitUrl: string, fn: (tmpRoot: string) => T): T {
     "-c",
     "core.longpaths=true",
   ];
-  const inRepo = (args: string[], timeout: number) =>
-    execFileSync("git", ["-C", tmpRoot, ...HARDEN, ...args], {
-      stdio: "pipe",
-      encoding: "utf8",
-      timeout,
-    });
+  // Async: cloning/checkout hit the network and can take many seconds. Running
+  // them synchronously would block Node's event loop, freezing every other
+  // request (and browser tab) for the whole clone. execFileP yields instead.
+  const inRepo = async (args: string[], timeout: number) =>
+    (
+      await execFileP("git", ["-C", tmpRoot, ...HARDEN, ...args], {
+        encoding: "utf8",
+        timeout,
+        maxBuffer: 64 * 1024 * 1024,
+      })
+    ).stdout;
   try {
-    execFileSync(
+    await execFileP(
       "git",
       [
         ...HARDEN,
@@ -433,9 +444,9 @@ function withClone<T>(gitUrl: string, fn: (tmpRoot: string) => T): T {
         gitUrl,
         tmpRoot,
       ],
-      { stdio: "pipe", timeout: 90000 }
+      { timeout: 90000, maxBuffer: 64 * 1024 * 1024 }
     );
-    const paths = inRepo(["ls-tree", "-r", "--name-only", "HEAD"], 60000)
+    const paths = (await inRepo(["ls-tree", "-r", "--name-only", "HEAD"], 60000))
       .split("\n")
       .filter(Boolean);
     const rootIsSkill = paths.includes("SKILL.md") || paths.includes("skill.md");
@@ -448,11 +459,11 @@ function withClone<T>(gitUrl: string, fn: (tmpRoot: string) => T): T {
       ),
     ];
     if (!rootIsSkill && skillDirs.length) {
-      inRepo(["sparse-checkout", "set", "--cone", ...skillDirs], 60000);
+      await inRepo(["sparse-checkout", "set", "--cone", ...skillDirs], 60000);
     }
     // Materialize (fetches only the needed blobs when sparse).
-    inRepo(["checkout", "HEAD"], 180000);
-    return fn(tmpRoot);
+    await inRepo(["checkout", "HEAD"], 180000);
+    return await fn(tmpRoot);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
       throw new Error("Git isn't installed (or isn't on PATH). Install Git to install skills from a repo.");
@@ -467,7 +478,7 @@ function withClone<T>(gitUrl: string, fn: (tmpRoot: string) => T): T {
 export function installFromMarket(
   market: MarketSkill,
   agentIds: string[]
-): SkillRow {
+): Promise<SkillRow> {
   const slug = slugOf(market.name);
   return withClone(market.gitUrl, (tmpRoot) => {
     let skillDir = market.subpath ? path.join(tmpRoot, market.subpath) : tmpRoot;
@@ -490,7 +501,7 @@ export function installFromMarket(
  * Git install: user pastes `owner/repo`, `owner/repo/sub/path`, or a git URL.
  * Clones and installs the skill at the subpath (or the repo's primary skill).
  */
-export function installFromRef(ref: string, agentIds: string[]): SkillRow {
+export function installFromRef(ref: string, agentIds: string[]): Promise<SkillRow> {
   const input = ref.trim().replace(/^['"]|['"]$/g, "");
   let owner = "";
   let repo = "";
@@ -734,7 +745,7 @@ export async function checkAllUpdates(): Promise<UpdateInfo[]> {
   }
   for (const [repoFull, g] of byRepo) {
     try {
-      withClone(g.gitUrl, (tmp) => {
+      await withClone(g.gitUrl, (tmp) => {
         for (const it of g.items) {
           try {
             // Same identity guard as updateSkill: findSkillDir always returns
