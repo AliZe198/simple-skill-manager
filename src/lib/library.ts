@@ -1058,7 +1058,7 @@ const MCP_FORMATS: McpFormat[] = [
 /**
  * Manually re-point an agent's MCP config file (path RELATIVE to the agent root)
  * and pick which parser to use. Fixes auto-detection that pointed at the wrong
- * file — e.g. Kimi Code keeps MCP in ~/.kimi-code/config.toml, not the legacy
+ * file — e.g. Kimi Code keeps MCP in ~/.kimi-code/mcp.json, not the legacy
  * ~/.kimi/mcp.json. An empty `configPath` clears the override (reverts default).
  *
  * The MCP view is read-only, so this only changes WHERE we read from; it never

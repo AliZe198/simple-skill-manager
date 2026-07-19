@@ -941,7 +941,7 @@ export default function SettingsPage() {
                   <input
                     className="input min-w-0 flex-1 font-mono text-sm"
                     value={dirEdit.mcpPath}
-                    placeholder=".kimi-code/config.toml"
+                    placeholder=".kimi-code/mcp.json"
                     spellCheck={false}
                     onChange={(e) => {
                       setDirEdit({ ...dirEdit, mcpPath: e.target.value });

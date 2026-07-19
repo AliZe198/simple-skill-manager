@@ -117,8 +117,8 @@ export function buildFixtureTree(baseOverride?: string): {
     "version two — different content, more text so the hash differs"
   );
 
-  // Kimi present (copy-mode agent) with no skills yet.
-  ensureDir(path.join(root, ".kimi/skills"));
+  // Kimi Code present (copy-mode agent) with no skills yet.
+  ensureDir(path.join(root, ".kimi-code/skills"));
 
   writeMcpConfigs(root);
   return { root, dataDir };
@@ -160,9 +160,9 @@ function writeMcpConfigs(root: string): void {
       mcpServers: { fs: { command: "mcp-fs", args: ["/tmp"], env: {} } },
     })
   );
-  // Kimi (JSON)
+  // Kimi Code (JSON, ~/.kimi-code/mcp.json)
   fs.writeFileSync(
-    path.join(root, ".kimi/mcp.json"),
+    path.join(root, ".kimi-code/mcp.json"),
     JSON.stringify({
       mcpServers: { weather: { command: "weather-mcp", args: [], env: {} } },
     })

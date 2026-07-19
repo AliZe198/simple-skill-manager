@@ -67,12 +67,17 @@ export const BUILTIN_AGENTS: AgentConfig[] = [
   },
   {
     id: "kimi",
-    label: "Kimi",
-    skillsDirs: [".kimi/skills"],
+    label: "Kimi Code",
+    // Kimi rebranded to "Kimi Code" and moved its home to ~/.kimi-code. Keep the
+    // legacy ~/.kimi as a fallback so users who haven't migrated are still found.
+    // (id stays "kimi" so existing per-agent overrides/DB rows keep working.)
+    skillsDirs: [".kimi-code/skills", ".kimi/skills"],
     bundledDirs: [],
     // ⚠️ PRD §3: Kimi shows no symlinks in the wild → default copy mode.
     linkMode: "copy",
-    mcpConfigPath: ".kimi/mcp.json",
+    // Kimi Code keeps MCP servers in ~/.kimi-code/mcp.json (same JSON shape as
+    // the legacy ~/.kimi/mcp.json) — NOT in config.toml.
+    mcpConfigPath: ".kimi-code/mcp.json",
     mcpConfigFormat: "json-kimi",
   },
 ];

@@ -240,8 +240,8 @@ export const DICT = {
   agent_dir_title: { zh: "技能目录", en: "Skills directory" },
   agent_mcp_section: { zh: "MCP 配置文件", en: "MCP config file" },
   agent_mcp_desc: {
-    zh: "这个 Agent 的 MCP 配置文件（相对 Agent 根目录）及解析格式。例如 Kimi Code 的 MCP 在 .kimi-code/config.toml（TOML），而不是旧版的 .kimi/mcp.json。",
-    en: "This agent's MCP config file (relative to the agent root) and how to parse it. E.g. Kimi Code keeps MCP in .kimi-code/config.toml (TOML), not the legacy .kimi/mcp.json.",
+    zh: "这个 Agent 的 MCP 配置文件（相对 Agent 根目录）及解析格式。例如 Kimi Code 的 MCP 在 .kimi-code/mcp.json，而不是旧版的 .kimi/mcp.json。",
+    en: "This agent's MCP config file (relative to the agent root) and how to parse it. E.g. Kimi Code keeps MCP in .kimi-code/mcp.json, not the legacy .kimi/mcp.json.",
   },
   agent_mcp_path_label: {
     zh: "配置文件路径（相对 Agent 根目录）",
