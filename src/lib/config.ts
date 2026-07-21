@@ -4,7 +4,7 @@ import fs from "node:fs";
 import type { AppConfig } from "./types";
 
 /**
- * SAFETY FOUNDATION (see advisor note + PRD §12).
+ * SAFETY FOUNDATION (see advisor note).
  *
  * Every agent path resolves from this config. Two env vars make it possible
  * to point the entire app at a sandbox fixture tree instead of the user's

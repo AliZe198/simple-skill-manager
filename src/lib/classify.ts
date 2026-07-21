@@ -4,7 +4,7 @@ import type { DetectedAgent } from "./types";
 import { agentRoot } from "./config";
 
 /**
- * Bundled detection (PRD §4.4). A skill is "bundled" if:
+ * Bundled detection. A skill is "bundled" if:
  *  (a) it lives under one of the agent's bundledDirs,
  *  (b) its name is listed in a bundled manifest (the agent's configured one, or
  *      a `.bundled_manifest` co-located in the skill's own skills dir), or

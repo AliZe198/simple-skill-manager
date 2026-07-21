@@ -32,7 +32,7 @@ import type {
 } from "./types";
 
 /* --------------------------------------------------------------------- *
- *  OVERVIEW  (read-only: scan ⊕ DB → deduped rows, PRD §4.3/§4.6)
+ *  OVERVIEW  (read-only: scan ⊕ DB → deduped rows)
  * --------------------------------------------------------------------- */
 
 export function buildOverview(): SkillRow[] {
@@ -79,7 +79,7 @@ export function buildOverview(): SkillRow[] {
     const localChanged =
       adopted && hashDir(rec!.central_path as string) !== hash;
 
-    // Provenance: DB is authoritative for adopted skills (PRD §4.4);
+    // Provenance: DB is authoritative for adopted skills;
     // for discovered-only skills, bundled is derivable, else unknown.
     let provenance: Provenance;
     if (rec) provenance = rec.provenance;
@@ -243,7 +243,7 @@ function existingTargetIsOurs(
 }
 
 /* --------------------------------------------------------------------- *
- *  TARGETS  (enable / disable a skill for one agent, PRD §4.2)
+ *  TARGETS  (enable / disable a skill for one agent)
  * --------------------------------------------------------------------- */
 
 export function createTarget(
@@ -318,7 +318,7 @@ export function syncLocalChange(
 }
 
 /* --------------------------------------------------------------------- *
- *  ADOPT  (move discovered skill → library, replace occurrences, PRD §4.3)
+ *  ADOPT  (move discovered skill → library, replace occurrences)
  * --------------------------------------------------------------------- */
 
 export function adopt(
@@ -365,7 +365,7 @@ export function adopt(
     ...grouped.occurrences.map((o) => path.basename(o.foundPath)),
   ]);
 
-  // Default provenance per PRD §4.4/§12: adopting an existing skill ⇒ downloaded.
+  // Default provenance: adopting an existing skill ⇒ downloaded.
   upsertSkill({
     contentHash: hash,
     name: grouped.name,
@@ -383,7 +383,7 @@ export function adopt(
   // symlink EPERM on Windows) we keep going: the skill stays safely in the
   // library (parked for that agent) rather than aborting the whole adoption.
   for (const occ of grouped.occurrences) {
-    if (occ.bundled) continue; // leave bundled originals untouched (PRD §11)
+    if (occ.bundled) continue; // leave bundled originals untouched
     const agent = getAgent(occ.agentId);
     if (!agent) continue;
     rmAny(occ.foundPath);
@@ -515,7 +515,7 @@ export function removeFromLibrary(hash: string): void {
  *  PARK / UNPARK / DELETE / NEW
  * --------------------------------------------------------------------- */
 
-/** Park: remove every target but keep the skill in the library (PRD §4.5). */
+/** Park: remove every target but keep the skill in the library. */
 export function park(hash: string): SkillRow {
   for (const t of targetsFor(hash)) removeTarget(hash, t.agent_id);
   return findRow(hash);
@@ -895,8 +895,7 @@ export function deleteTags(tags: string[]): { affected: number } {
 }
 
 /* --------------------------------------------------------------------- *
- *  DETAIL  (read-only preview: SKILL.md content + file list, PRD §1 非目标
- *  excludes an EDITOR, not a viewer)
+ *  DETAIL  (read-only preview: SKILL.md content + file list)
  * --------------------------------------------------------------------- */
 
 export interface SkillDetail {

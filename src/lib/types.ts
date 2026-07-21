@@ -1,5 +1,4 @@
 // Shared domain types for Simple Skill Manager.
-// See PRD §3, §4, §8.
 
 export type Provenance =
   | "self-authored"
@@ -34,7 +33,7 @@ export interface AgentConfig {
   bundledNameDirs?: string[];
   /** Optional manifest file listing bundled skills (e.g. Hermes). */
   bundledManifest?: string;
-  /** Whether this agent loads symlinks. Probe-confirmed; default per PRD. */
+  /** Whether this agent loads symlinks. Probe-confirmed; default. */
   linkMode: TargetMode;
   mcpConfigPath?: string;
   mcpConfigFormat?: McpFormat;

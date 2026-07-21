@@ -27,7 +27,7 @@ function hashOf(name: string, grouped: { name: string; hash: string }[]) {
 }
 
 describe("overview", () => {
-  it("first run is read-only and shows a deduped list (PRD 第0天)", async () => {
+  it("first run is read-only and shows a deduped list", async () => {
     const { buildOverview } = await lib();
     const before = listLibraryDirs(root);
     const rows = buildOverview();

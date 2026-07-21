@@ -4,12 +4,12 @@ import { agentRoot, loadConfig } from "./config";
 import type { AgentConfig, DetectedAgent } from "./types";
 
 /**
- * Built-in agent definitions (PRD §3). Paths are relative to the agent root
+ * Built-in agent definitions. Paths are relative to the agent root
  * so the whole set re-points at a sandbox via SSM_AGENT_ROOT.
  *
- * linkMode defaults follow the PRD: symlink everywhere except Kimi, which is
+ * linkMode defaults: symlink everywhere except Kimi, which is
  * suspected not to honor symlinks (the real probe is a manual, awake-user
- * action — see PRD §4.2).
+ * action).
  */
 export const BUILTIN_AGENTS: AgentConfig[] = [
   {
@@ -73,7 +73,7 @@ export const BUILTIN_AGENTS: AgentConfig[] = [
     // (id stays "kimi" so existing per-agent overrides/DB rows keep working.)
     skillsDirs: [".kimi-code/skills", ".kimi/skills"],
     bundledDirs: [],
-    // ⚠️ PRD §3: Kimi shows no symlinks in the wild → default copy mode.
+    // ⚠️ Kimi shows no symlinks in the wild → default copy mode.
     linkMode: "copy",
     // Kimi Code keeps MCP servers in ~/.kimi-code/mcp.json (same JSON shape as
     // the legacy ~/.kimi/mcp.json) — NOT in config.toml.
@@ -82,7 +82,7 @@ export const BUILTIN_AGENTS: AgentConfig[] = [
   },
 ];
 
-/** Extra candidate dirs to auto-detect (PRD §3 "其他"). */
+/** Extra candidate dirs to auto-detect. */
 const EXTRA_CANDIDATES: { id: string; label: string; dir: string }[] = [
   { id: "copilot", label: "Copilot", dir: ".copilot/skills" },
   { id: "kiro", label: "Kiro", dir: ".kiro/skills" },

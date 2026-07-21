@@ -3,7 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 /**
- * Content hash of a skill directory (PRD §4.6 — the dedup primary key).
+ * Content hash of a skill directory (the dedup primary key).
  *
  * Deterministic: walk the tree in sorted order, hashing each file's relative
  * path + bytes. Two directories with identical content hash to the same value

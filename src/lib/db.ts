@@ -4,11 +4,11 @@ import type { Provenance, TargetMode, TargetStatus } from "./types";
 
 /**
  * SQLite is the authoritative store for things the filesystem can't tell us:
- * provenance, enabled/parked state, favorites, and the exact targets we wrote
- * (PRD §8). The scan is read-only truth about the filesystem; the DB is truth
+ * provenance, enabled/parked state, favorites, and the exact targets we wrote.
+ * The scan is read-only truth about the filesystem; the DB is truth
  * about our decisions. They're merged in library.ts.
  *
- * Keyed on contentHash so re-scanning is idempotent (PRD: scan must not dupe).
+ * Keyed on contentHash so re-scanning is idempotent.
  */
 
 let _db: Database.Database | null = null;

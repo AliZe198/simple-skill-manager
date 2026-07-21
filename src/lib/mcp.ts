@@ -7,7 +7,7 @@ import { detectAgents } from "./agents";
 import type { DetectedAgent, McpFormat, McpServer } from "./types";
 
 /**
- * READ-ONLY MCP overview (PRD §5). Parses six config shapes across three file
+ * READ-ONLY MCP overview. Parses six config shapes across three file
  * formats; never writes. env values are returned in full here — masking is the
  * API/UI layer's job (so "reveal" can show the real value on click).
  */
@@ -138,7 +138,7 @@ function fromStandardJson(
     });
 }
 
-/** OpenClaw non-standard `mcporter` block (PRD §3). */
+/** OpenClaw non-standard `mcporter` block. */
 function fromOpenClaw(
   json: unknown,
   agentId: string,
@@ -227,7 +227,7 @@ function fromHermesYaml(
   });
 }
 
-/* --- env masking (PRD §5) ---------------------------------------------- */
+/* --- env masking ---------------------------------------------- */
 
 /** Mask a secret-looking value: keep a hint of the prefix, star the rest. */
 export function maskValue(v: string): string {

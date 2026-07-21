@@ -29,7 +29,7 @@
     ".next",
     "!.next/cache",
     "public",
-    "scripts",
+    "scripts/prepare.mjs",
     "next.config.mjs",
     "README.zh-CN.md"
   ],

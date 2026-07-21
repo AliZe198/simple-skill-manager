@@ -26,7 +26,7 @@ describe("agent detection", () => {
     expect(byId["codex"].detected).toBe(true);
     expect(byId["hermes"].detected).toBe(true);
     expect(byId["kimi"].detected).toBe(true);
-    // Kimi defaults to copy mode (PRD §3).
+    // Kimi defaults to copy mode.
     expect(byId["kimi"].linkMode).toBe("copy");
   });
 });

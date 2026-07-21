@@ -117,7 +117,7 @@ export interface GroupedSkill {
   allBundled: boolean;
 }
 
-/** Group raw occurrences by content hash (the dedup step, PRD §4.6). */
+/** Group raw occurrences by content hash (the dedup step). */
 export function groupByHash(raws: RawScan[]): GroupedSkill[] {
   const map = new Map<string, GroupedSkill>();
   for (const r of raws) {

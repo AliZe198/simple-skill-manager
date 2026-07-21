@@ -22,7 +22,7 @@ export default function WorkspacePage({
     return {
       // Active in this agent.
       active: rows.filter((r) => r.activeAgentIds.includes(agentId)),
-      // In library but not enabled here (PRD "与库对比缺哪些").
+      // In library but not enabled here.
       available: rows.filter(
         (r) => r.adopted && !r.activeAgentIds.includes(agentId)
       ),
