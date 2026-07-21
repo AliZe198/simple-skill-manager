@@ -17,3 +17,9 @@ coverage
 
 # build info
 *.tsbuildinfo
+
+# local-only dev docs & scratch notes (never publish)
+HANDOFF.md
+PRD.md
+PRODUCT.md
+docs/
