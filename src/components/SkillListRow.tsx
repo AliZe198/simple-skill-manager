@@ -64,7 +64,11 @@ export function SkillListRow({
   function submitRename() {
     const name = renameVal.trim();
     setRenaming(false);
-    if (!name || name === skill.name) return;
+    // Don't skip on an unchanged name: rename also repairs a folder still sitting
+    // on a hash-suffixed slug (what a merge leaves behind — clean name, ugly dir).
+    // renameSkill() has its own no-op check that covers the folder too, so let the
+    // server decide whether there is anything to do.
+    if (!name) return;
     run({ action: "rename", hash: skill.contentHash, name }, t("rename_done"));
   }
 
