@@ -507,7 +507,8 @@ export function removeFromLibrary(hash: string): void {
     }
     deleteTarget(hash, t.agent_id);
   }
-  rmAny(rec.central_path);
+  if (!centralPathClaimedByOthers(hash, rec.central_path))
+    rmAny(rec.central_path);
   deleteSkill(hash);
 }
 
@@ -521,13 +522,28 @@ export function park(hash: string): SkillRow {
   return findRow(hash);
 }
 
+/**
+ * Is this library dir still claimed by a different skill record? Two records
+ * end up on one central_path when a skill is edited in place: the row for the
+ * old content hash lingers even though only the new bytes exist on disk.
+ * Deleting such a row must NOT delete the directory, or it takes the surviving
+ * skill's files with it.
+ */
+function centralPathClaimedByOthers(hash: string, centralPath: string): boolean {
+  return allSkills().some(
+    (s) => s.content_hash !== hash && s.central_path === centralPath
+  );
+}
+
 /** Delete a skill: remove targets, library copy, and any un-adopted originals. */
 export function remove(hash: string): void {
   const rec = getSkill(hash);
   if (rec?.central_path) snapshotLibrary(`before delete: ${rec.name}`);
   for (const t of targetsFor(hash)) removeTarget(hash, t.agent_id);
-  if (rec?.central_path) rmAny(rec.central_path);
-  else {
+  if (rec?.central_path) {
+    if (!centralPathClaimedByOthers(hash, rec.central_path))
+      rmAny(rec.central_path);
+  } else {
     // Un-adopted: best-effort delete of the real (non-bundled) originals.
     const grouped = groupByHash(scanAll()).find((g) => g.hash === hash);
     for (const occ of grouped?.occurrences ?? []) {
@@ -590,8 +606,33 @@ export function duplicateGroups(): DupGroup[] {
   const adopted = allSkills().filter(
     (s) => s.central_path && fs.existsSync(s.central_path)
   );
-  const byName = new Map<string, typeof adopted>();
+  // Editing a skill in place leaves a stale row for its OLD hash still pointing
+  // at the same dir. Those aren't duplicates — there is only one copy on disk —
+  // so collapse each dir to the record matching the bytes actually there (the
+  // newest as a fallback). Listing them would offer a "merge" whose only
+  // possible outcome is deleting the single real copy.
+  const byPath = new Map<string, typeof adopted>();
   for (const s of adopted) {
+    const dir = s.central_path as string;
+    const arr = byPath.get(dir) ?? [];
+    arr.push(s);
+    byPath.set(dir, arr);
+  }
+  const live: typeof adopted = [];
+  for (const [dir, rows] of byPath) {
+    if (rows.length === 1) {
+      live.push(rows[0]);
+      continue;
+    }
+    const actual = hashDir(dir);
+    live.push(
+      rows.find((r) => r.content_hash === actual) ??
+        rows.reduce((a, b) => (a.created_at >= b.created_at ? a : b))
+    );
+  }
+
+  const byName = new Map<string, typeof adopted>();
+  for (const s of live) {
     const arr = byName.get(s.name) ?? [];
     arr.push(s);
     byName.set(s.name, arr);

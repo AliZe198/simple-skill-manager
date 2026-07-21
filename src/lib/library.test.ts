@@ -395,6 +395,38 @@ describe("忽略 Agent (ignoreAgent / unignoreAgent)", () => {
   });
 });
 
+describe("stale record pointing at a live library dir (in-place edit)", () => {
+  it("is not offered as a duplicate, and dropping it keeps the real files", async () => {
+    const { buildOverview, adopt, duplicateGroups, remove } = await lib();
+    const { upsertSkill } = await import("./db");
+
+    const grouped = buildOverview().map((r) => ({ name: r.name, hash: r.contentHash }));
+    const hash = hashOf("better-auth", grouped);
+    const row = adopt(hash);
+    const dir = row.centralPath!;
+    expect(fs.existsSync(dir)).toBe(true);
+
+    // Editing a skill in place leaves exactly this behind: a row for the OLD
+    // content hash still pointing at the same library dir.
+    const staleHash = "0".repeat(64);
+    upsertSkill({
+      contentHash: staleHash,
+      name: row.name,
+      description: row.description,
+      centralPath: dir,
+    });
+
+    // Not a real duplicate — there is only one copy on disk. Offering a merge
+    // here would let the user delete the single real copy.
+    expect(duplicateGroups().some((g) => g.name === row.name)).toBe(false);
+
+    // Dropping the stale row must not take the surviving skill's files.
+    remove(staleHash);
+    expect(fs.existsSync(dir)).toBe(true);
+    expect(buildOverview().find((r) => r.contentHash === hash)?.adopted).toBe(true);
+  });
+});
+
 function listLibraryDirs(_root: string): string[] {
   const libDir = path.join(process.env.SSM_DATA_DIR!, "library");
   try {

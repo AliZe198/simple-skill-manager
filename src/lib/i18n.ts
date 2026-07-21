@@ -128,6 +128,7 @@ export const DICT = {
   dedup_merged: { zh: "已合并", en: "Merged" },
   dedup_files: { zh: "个文件", en: "files" },
   dedup_fullest: { zh: "最全", en: "fullest" },
+  dedup_newest: { zh: "最新", en: "newest" },
   dedup_open_finder: { zh: "在 Finder 打开", en: "Open in Finder" },
   lbl_belongs_to: { zh: "属于", en: "Belongs to" },
   zone_builtin_hint: {

@@ -124,6 +124,14 @@ function DupGroupRow({
     }
   }
 
+  // "Fullest" is only a file-count hint, and file count is a poor proxy for
+  // "better": an older version that still ships a dropped extra file outranks
+  // the current one. Surface the adopted date and flag the newest copy so the
+  // choice isn't made on file count alone.
+  const newestHash = group.copies.reduce((a, b) =>
+    a.createdAt >= b.createdAt ? a : b
+  ).hash;
+
   return (
     <div className="rounded-bubble border border-amber-200 bg-content/70 p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -155,9 +163,17 @@ function DupGroupRow({
               <span className="text-ink-body">
                 {c.fileCount} {t("dedup_files")} · {c.sizeKb}KB
               </span>
+              <span className="text-ink-muted">
+                {new Date(c.createdAt).toLocaleDateString()}
+              </span>
               {i === 0 && (
                 <span className="rounded-pill bg-mint/15 px-1.5 text-[10px] font-bold text-mint-active">
                   {t("dedup_fullest")}
+                </span>
+              )}
+              {c.hash === newestHash && (
+                <span className="rounded-pill bg-amber-100 px-1.5 text-[10px] font-bold text-amber-700">
+                  {t("dedup_newest")}
                 </span>
               )}
               <span className="ml-auto flex items-center gap-1">
