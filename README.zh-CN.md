@@ -8,6 +8,43 @@ MCP 配置的**只读总览**。
 
 完全本地运行、无云端、无账号。界面默认英文，侧边栏底部可切中文（选择会被记住）。
 
+## 快速开始
+
+需要 **Node.js 18+**。不用 clone、不用构建：
+
+```bash
+npx simple-skill-manager             # 指向你真实的家目录（端口 3000）
+npx simple-skill-manager --port 4000 # 指定端口
+```
+
+然后打开 http://localhost:3000 。服务只监听 `127.0.0.1`，别的机器连不上。按 Ctrl+C 停止。
+
+首次打开只做**只读扫描、不动任何文件** —— 先给你一份去重清单，再谈移动。
+
+### Windows
+
+`npx simple-skill-manager` 在 PowerShell 或 cmd 里用法完全一样。
+
+> **Windows 软链权限**：建软链需要开发者模式（设置 → 隐私和安全性 → 开发者选项）或管理员终端。
+> 不想开也行：到设置页把对应 Agent 切成**拷贝模式**，无需任何权限。
+
+### macOS：做一个双击启动的图标
+
+不想每次敲命令？可以在自己机器上生成一个 Mac 应用，只需做一次：
+
+```bash
+git clone https://github.com/AliZe198/simple-skill-manager.git
+cd simple-skill-manager
+npm install
+npm run build
+bash scripts/make-mac-app.sh          # → ~/Applications/Simple Skill Manager.app
+```
+
+在「访达」里双击它，或拖到 Dock 上。它会启动服务并打开浏览器；按 Cmd+Q 退出，服务也会一起关掉，
+跟普通 Mac 应用一样。
+
+仅限 macOS。仓库路径是写死进应用里的，所以移动或改名文件夹之后，要重新跑一遍最后那行命令。
+
 ## 功能
 
 - **自动检测已安装的 Agent**（13 个适配器），扫描各自的 skill 目录
@@ -32,56 +69,6 @@ MCP 配置的**只读总览**。
 
 写出根目录之外会被拒绝（realpath 校验，软链逃逸也挡）。同名但**不归本工具管理**的 skill 绝不覆盖——你手写的文件是安全的。
 
-## 快速开始
-
-需要 **Node.js 18+**。最省事——不用 clone、不用构建：
-
-```bash
-npx simple-skill-manager             # 指向你真实的家目录（端口 3000）
-npx simple-skill-manager --port 4000 # 指定端口
-```
-
-服务只监听 `127.0.0.1`，别的机器连不上。按 Ctrl+C 停止。
-
-首次打开只做**只读扫描、不动任何文件** —— 先给你一份去重清单，再谈移动。
-
-### 从 git clone 跑（开发用）
-
-```bash
-./start.sh              # 生产模式：构建并启动，指向你真实 $HOME（端口 3000）
-./dev.sh                # 开发模式：免构建、改代码自动刷新
-./dev.sh --sandbox      # 开发模式 + 沙箱假数据（不碰真实文件）
-./stop.sh               # 停掉正在运行的服务
-```
-
-> `dev.sh` 和 `start.sh` 的区别：`dev.sh` 改代码自动热刷新；`start.sh` 伺服的是启动那一刻的构建，
-> 改完代码必须 `./stop.sh && ./start.sh` 重来才生效。
-
-## 快速开始（Windows）
-
-`.sh` 脚本只能在 Git Bash / WSL 里跑；原生 PowerShell 或 cmd 直接用 npm 命令：
-
-```powershell
-npm install     # 会装原生 better-sqlite3（通常有预编译包）
-npm run build
-npm run start   # → http://localhost:3000（扫描你真实的 %USERPROFILE%）
-# 想边改边看（热刷新）：npm run dev
-```
-
-> **Windows 软链权限**：建软链需要开发者模式（设置 → 隐私和安全性 → 开发者选项）或管理员终端。
-> 不想开也行：到设置页把对应 Agent 切成**拷贝模式**，无需任何权限。
-
-### 沙箱模式（仅开发用）
-
-一棵一次性的假 agent 目录树，用来改代码时不碰真实文件：
-
-```bash
-node scripts/build-sandbox.mjs        # 在 .ssm-sandbox/ 造一棵假的 agent 目录树
-SSM_AGENT_ROOT="$PWD/.ssm-sandbox/home" \
-SSM_DATA_DIR="$PWD/.ssm-sandbox/data" \
-  npx next dev -p 3210
-```
-
 ## 核心概念
 
 | 操作 | 含义 |
@@ -103,17 +90,9 @@ SSM_DATA_DIR="$PWD/.ssm-sandbox/data" \
 - 同步的是：技能文件 + `manifest.json`（哈希、来源、标签）；**不同步**「哪个 Agent 用哪个技能」——每台机器各自决定
 - 跨平台内容哈希靠 `.gitattributes eol=lf` 两端保持一致（已测 macOS ↔ Windows）
 
-## 测试
+## 参与开发
 
-```bash
-npm test          # 单元测试 + 安全护栏回归
-npm run build     # 生产构建
-npm run typecheck # tsc --noEmit
-```
-
-## 技术栈
-
-Next.js 15 (App Router) · TypeScript · Tailwind CSS · better-sqlite3 · SWR · Vitest
+想改这个应用本身？见 [CONTRIBUTING.md](CONTRIBUTING.md)（英文）。
 
 ## 致谢
 

@@ -6,6 +6,41 @@ A local web app that gathers the **skills** scattered across your AI coding agen
 
 Runs entirely on your machine. No cloud, no account.
 
+## Quick start
+
+Requires **Node.js 18+**. No clone, no build:
+
+```bash
+npx simple-skill-manager             # run against your real home dir (port 3000)
+npx simple-skill-manager --port 4000 # pick a port
+```
+
+Then open http://localhost:3000. The server listens on `127.0.0.1` only, so it's never reachable from your network. Stop it with Ctrl+C.
+
+The first launch does a **read-only scan and changes nothing** — you get a deduplicated list before anything is moved.
+
+### Windows
+
+`npx simple-skill-manager` works the same in PowerShell or cmd.
+
+> **Symlinks on Windows** require Developer Mode (Settings → Privacy & security → For developers) or an admin terminal. Don't want either? Switch agents to **copy mode** in Settings — no special permissions needed.
+
+### macOS: a double-clickable app
+
+Prefer an icon in your Dock over a terminal command? You build it once, on your own machine:
+
+```bash
+git clone https://github.com/AliZe198/simple-skill-manager.git
+cd simple-skill-manager
+npm install
+npm run build
+bash scripts/make-mac-app.sh          # → ~/Applications/Simple Skill Manager.app
+```
+
+Double-click it in Finder or drag it to your Dock. It starts the server and opens your browser; Cmd+Q quits the app and shuts the server down, like any other Mac app.
+
+macOS only. The clone's path is baked into the app, so re-run the last command if you move or rename the folder.
+
 ## Features
 
 - **Auto-detects installed agents** (13 adapters) and scans their skill directories
@@ -31,54 +66,6 @@ The first launch does a **read-only scan and changes nothing**. After that, the 
 
 Writes outside these roots are rejected (realpath-checked, symlink escapes blocked). It also **never overwrites a same-named skill it doesn't manage** — your hand-written files are safe.
 
-## Quick start
-
-Requires **Node.js 18+**. The fastest way — no clone, no build:
-
-```bash
-npx simple-skill-manager             # run against your real home dir (port 3000)
-npx simple-skill-manager --port 4000 # pick a port
-```
-
-The server listens on `127.0.0.1` only, so it's never reachable from your network. Stop it with Ctrl+C.
-
-The first launch does a **read-only scan and changes nothing** — you get a deduplicated list before anything is moved.
-
-### From a git clone (for development)
-
-```bash
-./start.sh              # production build + run against your real $HOME (port 3000)
-./dev.sh                # dev mode: no build step, hot reload
-./dev.sh --sandbox      # dev mode against a throwaway sandbox tree (fake data)
-./stop.sh               # stop the running server
-```
-
-> `dev.sh` vs `start.sh`: `dev.sh` hot-reloads as you edit code; `start.sh` serves a frozen production build — after changing code you must `./stop.sh && ./start.sh` again.
-
-## Quick start (Windows)
-
-The `.sh` scripts are bash-only (they run under Git Bash / WSL). Native PowerShell or cmd works with plain npm commands:
-
-```powershell
-npm install     # installs native better-sqlite3 (prebuilt binaries in most cases)
-npm run build
-npm run start   # → http://localhost:3000 (scans your real %USERPROFILE%)
-# or, for development with hot reload:  npm run dev
-```
-
-> **Symlinks on Windows** require Developer Mode (Settings → Privacy & security → For developers) or an admin terminal. Don't want either? Switch agents to **copy mode** in Settings — no special permissions needed.
-
-### Sandbox mode (development only)
-
-A throwaway fake agent tree for hacking on the app without touching real files:
-
-```bash
-node scripts/build-sandbox.mjs        # builds a fake agent tree under .ssm-sandbox/
-SSM_AGENT_ROOT="$PWD/.ssm-sandbox/home" \
-SSM_DATA_DIR="$PWD/.ssm-sandbox/data" \
-  npx next dev -p 3210
-```
-
 ## Core concepts
 
 | Action                       | Meaning                                                                                                                                    |
@@ -100,17 +87,9 @@ Settings → "GitHub backup & sync" backs your **skill library** up to a **priva
 - What syncs: skill files + `manifest.json` (hashes, origins, tags). What doesn't: which agent uses which skill — each machine decides that for itself.
 - Cross-platform content hashes are kept identical via `.gitattributes eol=lf` (tested macOS ↔ Windows)
 
-## Tests
+## Contributing
 
-```bash
-npm test          # unit + safety regression tests
-npm run build     # production build
-npm run typecheck # tsc --noEmit
-```
-
-## Tech stack
-
-Next.js 15 (App Router) · TypeScript · Tailwind CSS · better-sqlite3 · SWR · Vitest
+Want to hack on the app itself? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 

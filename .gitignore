@@ -23,3 +23,8 @@ HANDOFF.md
 PRD.md
 PRODUCT.md
 docs/
+
+# local-only launcher scripts (never publish)
+/start.sh
+/dev.sh
+/stop.sh
