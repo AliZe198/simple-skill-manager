@@ -208,8 +208,15 @@ if [ -f "$ICON_SRC" ]; then
     sips -z "$((s * 2))" "$((s * 2))" "$ICON_SRC" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null 2>&1
   done
   iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/applet.icns"
-  # Nudge Finder so it drops the cached generic icon.
+  # osacompile ships an Assets.car holding the stock applet icon, and
+  # CFBundleIconName points into it — on modern macOS that asset catalog wins
+  # over applet.icns, so the custom icon never shows. Drop both and the system
+  # falls back to CFBundleIconFile → our icns.
+  rm -f "$APP/Contents/Resources/Assets.car"
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$APP/Contents/Info.plist" 2>/dev/null || true
+  # Nudge Finder/Dock so they drop the cached old icon.
   touch "$APP"
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP" 2>/dev/null || true
 fi
 
 echo "✅ Built: $APP"
