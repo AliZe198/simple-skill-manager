@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import cn from "classnames";
-import { useSkills, useAgents, fetcher } from "@/lib/client";
+import { useSkills, useAgents, fetcher, apiPost } from "@/lib/client";
 import { useLang } from "@/components/LangProvider";
 import { useToast } from "@/components/Toast";
 import { SkillListRow } from "@/components/SkillListRow";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DedupPanel } from "@/components/DedupPanel";
 import { Button, EmptyState, ErrorState, Spinner } from "@/components/ui";
 import type { DetectedAgent, SkillRow } from "@/lib/types";
@@ -29,6 +30,8 @@ export default function LibraryPage() {
   const toast = useToast();
   const [checking, setChecking] = useState(false);
   const [updates, setUpdates] = useState<Map<string, { hasUpdate: boolean; source: string | null }> | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkConfirm, setBulkConfirm] = useState(false);
 
   async function checkUpdates() {
     setChecking(true);
@@ -74,6 +77,48 @@ export default function LibraryPage() {
       ),
     [importedAll, zone]
   );
+
+  // Bulk one-click targets. Both count the current zone only; the builtin
+  // zone never has local edits or updates, so the buttons vanish there.
+  const unsynced = useMemo(
+    () => imported.filter((r) => r.localChanged),
+    [imported]
+  );
+  const updatable = useMemo(
+    () =>
+      updates
+        ? imported.filter((r) => updates.get(r.contentHash)?.hasUpdate)
+        : [],
+    [imported, updates]
+  );
+
+  // Sequential on purpose: each action rewrites library state on disk, and
+  // partial failure shouldn't abort the rest.
+  async function runBulk(
+    hashes: string[],
+    action: "syncLocalChange" | "updateSkill"
+  ) {
+    setBulkBusy(true);
+    let ok = 0;
+    let fail = 0;
+    for (const hash of hashes) {
+      try {
+        await apiPost("/api/skills/action", { action, hash });
+        ok++;
+      } catch {
+        fail++;
+      }
+    }
+    setBulkBusy(false);
+    // Updating changes content hashes, so the stale update map can't be
+    // trusted afterwards — clear it and let the user re-check.
+    if (action === "updateSkill") setUpdates(null);
+    const msg =
+      t("bulk_ok_n").replace("{n}", String(ok)) +
+      (fail ? " · " + t("bulk_fail_n").replace("{n}", String(fail)) : "");
+    toast(msg, fail ? "error" : "success");
+    mutate();
+  }
 
   // Search applies first; categories + status filter the search results.
   const searched = useMemo(() => {
@@ -235,6 +280,36 @@ export default function LibraryPage() {
               </button>
             ))}
           </div>
+          {unsynced.length > 0 && (
+            <Button
+              variant="default"
+              disabled={bulkBusy}
+              onClick={() =>
+                runBulk(
+                  unsynced.map((r) => r.contentHash),
+                  "syncLocalChange"
+                )
+              }
+            >
+              ⟳ {t("sync_all")} ({unsynced.length})
+            </Button>
+          )}
+          {updatable.length > 0 && (
+            <Button
+              variant="primary"
+              disabled={bulkBusy}
+              onClick={() => {
+                if (updatable.some((r) => r.localChanged)) setBulkConfirm(true);
+                else
+                  runBulk(
+                    updatable.map((r) => r.contentHash),
+                    "updateSkill"
+                  );
+              }}
+            >
+              ⬆ {t("upd_all")} ({updatable.length})
+            </Button>
+          )}
           <Button variant="default" disabled={checking} onClick={checkUpdates}>
             {checking ? t("upd_checking") : `⬆ ${t("upd_check")}`}
           </Button>
@@ -358,6 +433,28 @@ export default function LibraryPage() {
         </div>
       ) : (
         grid
+      )}
+
+      {bulkConfirm && (
+        <ConfirmDialog
+          title={`⬆ ${t("upd_all")}`}
+          body={t("upd_all_confirm_body")
+            .replace("{n}", String(updatable.length))
+            .replace(
+              "{m}",
+              String(updatable.filter((r) => r.localChanged).length)
+            )}
+          confirmLabel={t("upd_all")}
+          danger={false}
+          onCancel={() => setBulkConfirm(false)}
+          onConfirm={() => {
+            setBulkConfirm(false);
+            runBulk(
+              updatable.map((r) => r.contentHash),
+              "updateSkill"
+            );
+          }}
+        />
       )}
     </div>
   );

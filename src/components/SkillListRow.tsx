@@ -109,20 +109,41 @@ export function SkillListRow({
             </span>
           )}
           {update?.hasUpdate && (
-            <span
-              className="badge shrink-0 bg-amber-100 text-amber-700"
-              title={update.source ? `${t("upd_from")} ${update.source}` : ""}
+            <button
+              disabled={busy}
+              onClick={() => {
+                // Same rule as the menu item: overwriting unsynced local
+                // edits needs a confirm (a snapshot is taken first).
+                if (skill.localChanged) setConfirm("update");
+                else
+                  run(
+                    { action: "updateSkill", hash: skill.contentHash },
+                    t("upd_done")
+                  );
+              }}
+              className="badge shrink-0 bg-amber-100 text-amber-700 transition-colors hover:bg-amber-200 disabled:opacity-50"
+              title={
+                t("upd_badge_click") +
+                (update.source ? ` · ${t("upd_from")} ${update.source}` : "")
+              }
             >
               ⬆ {t("upd_available")}
-            </span>
+            </button>
           )}
           {!bundled && skill.localChanged && (
-            <span
-              className="badge shrink-0 bg-orange-100 text-orange-700"
+            <button
+              disabled={busy}
+              onClick={() =>
+                run(
+                  { action: "syncLocalChange", hash: skill.contentHash },
+                  t("sync_local_done")
+                )
+              }
+              className="badge shrink-0 bg-orange-100 text-orange-700 transition-colors hover:bg-orange-200 disabled:opacity-50"
               title={t("sync_local_hint")}
             >
               ⟳ {t("sync_local_badge")}
-            </span>
+            </button>
           )}
         </div>
         <p className="truncate text-xs text-ink-body">

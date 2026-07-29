@@ -43,13 +43,23 @@ export const DICT = {
   // local-change sync (skill edited in place in the library)
   sync_local_badge: { zh: "改动未同步", en: "Unsynced changes" },
   sync_local_hint: {
-    zh: "库里的内容改过了，但拷贝模式的 agent 副本还是旧的。点「同步改动」重新拷贝。",
-    en: "The library copy was edited, but copy-mode agents still hold the old version. Click “Sync changes” to re-copy.",
+    zh: "库里的内容改过了，但拷贝模式的 agent 副本还是旧的。点一下立即重新拷贝。",
+    en: "The library copy was edited, but copy-mode agents still hold the old version. Click to re-copy now.",
   },
   sync_local_btn: { zh: "同步改动", en: "Sync changes" },
   sync_local_done: { zh: "已同步到各 agent", en: "Synced to agents" },
   upd_none: { zh: "都是最新的 ✓", en: "All up to date ✓" },
   upd_found_n: { zh: "个有更新", en: "with updates" },
+  // one-click badges + bulk actions
+  upd_badge_click: { zh: "点一下立即更新", en: "Click to update now" },
+  upd_all: { zh: "全部更新", en: "Update all" },
+  sync_all: { zh: "全部同步", en: "Sync all" },
+  upd_all_confirm_body: {
+    zh: "{n} 个技能将被更新，其中 {m} 个有未同步的本地改动，会被上游版本覆盖（更新前自动保留本地快照，可恢复）。继续？",
+    en: "{n} skill(s) will be updated; {m} of them have unsynced local edits that upstream will overwrite (a local snapshot is taken first, so it's recoverable). Continue?",
+  },
+  bulk_ok_n: { zh: "成功 {n} 个", en: "{n} succeeded" },
+  bulk_fail_n: { zh: "失败 {n} 个", en: "{n} failed" },
   act_install: { zh: "安装", en: "Install" },
   act_want: { zh: "想要", en: "Want" },
   act_reveal: { zh: "显示明文", en: "Reveal" },
