@@ -686,7 +686,11 @@ export function mergeDuplicates(keepHash: string, dropHashes: string[]): SkillRo
     }
     remove(dropHash); // delete the dropped library copy + DB row
   }
-  return findRow(keepHash);
+  // The kept copy may have received a hash suffix when it was adopted because
+  // the clean folder name belonged to one of the copies we just removed. Now
+  // that the collision is gone, normalize it back to the canonical slug and
+  // re-point every agent so no suffix leaks into their skill directories.
+  return renameSkill(keepHash, keep.name);
 }
 
 /** Open a skill's library folder in the OS file manager (Finder on macOS). */

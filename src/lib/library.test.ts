@@ -265,6 +265,7 @@ describe("去重 (mergeDuplicates)", () => {
     const rows = buildOverview();
     expect(rows.find((r) => r.contentHash === drop)).toBeFalsy();
     const kept = rows.find((r) => r.contentHash === keep)!;
+    expect(path.basename(kept.centralPath!)).toBe("dup-demo");
     for (const a of dropAgents) expect(kept.activeAgentIds).toContain(a);
   });
 });
