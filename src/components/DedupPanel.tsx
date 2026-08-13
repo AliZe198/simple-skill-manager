@@ -50,7 +50,8 @@ export function DedupPanel({
     <div className="rounded-card border-2 border-amber-200 bg-amber-50/60">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-2.5 text-sm font-bold text-amber-800"
+        aria-expanded={open}
+        className="flex w-full items-center justify-between rounded-[18px] px-4 py-2.5 text-sm font-bold text-amber-800 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focusYellow"
       >
         <span>
           ⚠️ {t("dedup_title")}（{groups.length}）
