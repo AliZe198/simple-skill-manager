@@ -24,6 +24,10 @@ describe("agent detection", () => {
     const byId = Object.fromEntries(agents.map((a) => [a.id, a]));
     expect(byId["claude-code"].detected).toBe(true);
     expect(byId["codex"].detected).toBe(true);
+    expect(byId["antigravity"].detected).toBe(true);
+    expect(byId["antigravity"].resolvedSkillsDirs).toEqual([
+      `${root}/.gemini/config/skills`,
+    ]);
     expect(byId["hermes"].detected).toBe(true);
     expect(byId["kimi"].detected).toBe(true);
     // Kimi defaults to copy mode.
@@ -52,6 +56,19 @@ describe("scan + dedup", () => {
     const kinds = gflights!.occurrences.map((o) => o.kind);
     expect(kinds).toContain("real-dir");
     expect(kinds.some((k) => k.startsWith("symlink"))).toBe(true);
+  });
+
+  it("scans Antigravity user skills separately from Gemini", async () => {
+    const { scanAll, groupByHash } = await import("./scan");
+    const grouped = groupByHash(scanAll());
+    const lecture = grouped.find((g) => g.name === "lecture-notes-generator");
+    expect(lecture).toBeDefined();
+    expect(lecture!.occurrences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId: "antigravity", kind: "real-dir" }),
+      ])
+    );
+    expect(lecture!.occurrences.some((o) => o.agentId === "gemini")).toBe(false);
   });
 
   it("classifies bundled skills", async () => {

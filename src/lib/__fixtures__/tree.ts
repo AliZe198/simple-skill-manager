@@ -117,6 +117,14 @@ export function buildFixtureTree(baseOverride?: string): {
     "version two — different content, more text so the hash differs"
   );
 
+  // Antigravity keeps its user-authored skills under Gemini's config subtree,
+  // separate from Gemini CLI's ~/.gemini/skills directory.
+  mkSkill(
+    path.join(root, ".gemini/config/skills/lecture-notes-generator"),
+    "lecture-notes-generator",
+    "Generate detailed lecture notes and course cheat sheets"
+  );
+
   // Kimi Code present (copy-mode agent) with no skills yet.
   ensureDir(path.join(root, ".kimi-code/skills"));
 

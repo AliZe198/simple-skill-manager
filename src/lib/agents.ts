@@ -40,6 +40,17 @@ export const BUILTIN_AGENTS: AgentConfig[] = [
     mcpConfigFormat: "json-gemini",
   },
   {
+    id: "antigravity",
+    label: "Antigravity",
+    // Antigravity keeps user-created skills separate from Gemini CLI skills.
+    // Its internal built-ins live elsewhere and intentionally aren't scanned
+    // here, so the user's library isn't cluttered with IDE implementation
+    // details.
+    skillsDirs: [".gemini/config/skills"],
+    bundledDirs: [],
+    linkMode: "symlink",
+  },
+  {
     id: "openclaw",
     label: "OpenClaw",
     skillsDirs: [".openclaw/skills"],
