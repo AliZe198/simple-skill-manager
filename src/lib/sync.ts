@@ -347,6 +347,24 @@ export interface SyncStatus {
   ghReady: boolean;
 }
 
+const PRE_CLOUD_OVERWRITE_REF = "refs/ssm/pre-cloud-overwrite";
+const CLOUD_OVERWRITE_RESULT_REF = "refs/ssm/cloud-overwrite-result";
+
+function currentBranch(): string {
+  return git(["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true }) || "main";
+}
+
+function refTip(ref: string): string {
+  return git(["rev-parse", "--verify", ref], { allowFail: true });
+}
+
+function canUndoCloudOverwrite(branch = currentBranch()): boolean {
+  const before = refTip(PRE_CLOUD_OVERWRITE_REF);
+  const overwritten = refTip(CLOUD_OVERWRITE_RESULT_REF);
+  const cloud = refTip(`origin/${branch}`);
+  return !!before && !!overwritten && cloud === overwritten && before !== overwritten;
+}
+
 export function syncStatus(): SyncStatus {
   const ghReady = ghAuthed();
   return {
@@ -844,11 +862,110 @@ export async function backup(): Promise<SyncStatus & { pushed: boolean }> {
     const msg = (e as Error).message;
     if (/non-fast-forward|fetch first|rejected|\bbehind\b/i.test(msg))
       throw new Error(
-        "The cloud has changes this machine doesn't (maybe backed up from another machine). Use \"Sync from cloud\" to merge first, then \"Back up now\". None of your local files were changed."
+        "The cloud also has changes, so the backup stopped to protect both versions. Nothing on this computer changed. Choose what you want to keep."
       );
     throw e;
   }
   return { ...syncStatus(), pushed: !!staged };
+}
+
+/**
+ * Make the cloud branch exactly match this machine.
+ *
+ * This is intentionally separate from backup(): ordinary backup never force
+ * pushes. Before replacing the cloud tip we preserve it twice: under a local
+ * undo ref and as a timestamped recovery branch on the remote. The final push
+ * uses force-with-lease, so a cloud update that lands after our fetch aborts
+ * the operation instead of being silently overwritten.
+ */
+export async function overwriteCloudWithLocal(): Promise<
+  SyncStatus & { recoveryBranch: string | null; overwrittenTo: string }
+> {
+  if (!isGitRepo() || !remoteUrl())
+    throw new Error("Not connected to GitHub yet. Connect first.");
+
+  ensureRepoFiles();
+  git(["add", "-A"]);
+  const staged = git(["diff", "--cached", "--name-only"], { allowFail: true });
+  if (staged) git(["commit", "-m", `Backup ${new Date().toISOString()}`]);
+
+  const branch = currentBranch();
+  await gitAsync(["fetch", "origin", branch]);
+  const cloudTip = refTip(`origin/${branch}`);
+  const localTip = refTip("HEAD");
+  if (!localTip) throw new Error("Couldn't read the local backup version.");
+
+  let recoveryBranch: string | null = null;
+  if (cloudTip && cloudTip !== localTip) {
+    git(["update-ref", PRE_CLOUD_OVERWRITE_REF, cloudTip]);
+    git(["update-ref", CLOUD_OVERWRITE_RESULT_REF, localTip]);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    recoveryBranch = `ssm-recovery/cloud-before-${stamp}`;
+    // If this fails, stop before changing the cloud's main branch.
+    await gitAsync([
+      "push",
+      "origin",
+      `${cloudTip}:refs/heads/${recoveryBranch}`,
+    ]);
+  }
+
+  try {
+    if (cloudTip) {
+      await gitAsync([
+        "push",
+        `--force-with-lease=refs/heads/${branch}:${cloudTip}`,
+        "origin",
+        `HEAD:refs/heads/${branch}`,
+      ]);
+    } else {
+      await gitAsync(["push", "origin", `HEAD:refs/heads/${branch}`]);
+    }
+  } catch {
+    throw new Error(
+      "The cloud changed again while you were confirming. Nothing was overwritten. Check the latest status and choose again."
+    );
+  }
+
+  return {
+    ...syncStatus(),
+    recoveryBranch,
+    overwrittenTo: `origin/${branch}`,
+  };
+}
+
+/** Restore the cloud tip saved immediately before the last local-overwrite. */
+export async function undoCloudOverwrite(): Promise<
+  SyncStatus & { restoredTo: string }
+> {
+  if (!isGitRepo() || !remoteUrl())
+    throw new Error("Not connected to GitHub yet. Connect first.");
+
+  const branch = currentBranch();
+  await gitAsync(["fetch", "origin", branch]);
+  const before = refTip(PRE_CLOUD_OVERWRITE_REF);
+  const overwritten = refTip(CLOUD_OVERWRITE_RESULT_REF);
+  const cloudTip = refTip(`origin/${branch}`);
+  if (!before || !overwritten || cloudTip !== overwritten) {
+    throw new Error(
+      "This cloud backup has changed since the overwrite, so it can't be safely undone automatically."
+    );
+  }
+
+  try {
+    await gitAsync([
+      "push",
+      `--force-with-lease=refs/heads/${branch}:${cloudTip}`,
+      "origin",
+      `${before}:refs/heads/${branch}`,
+    ]);
+  } catch {
+    throw new Error(
+      "The cloud changed again while you were confirming. Nothing was overwritten. Check the latest status and choose again."
+    );
+  }
+  git(["update-ref", "-d", PRE_CLOUD_OVERWRITE_REF], { allowFail: true });
+  git(["update-ref", "-d", CLOUD_OVERWRITE_RESULT_REF], { allowFail: true });
+  return { ...syncStatus(), restoredTo: `origin/${branch}` };
 }
 
 export async function pull(): Promise<
@@ -867,8 +984,7 @@ export async function pull(): Promise<
   // Pull the CURRENT branch — backup pushes `HEAD` (current branch), so pulling
   // the remote's default branch (`origin HEAD`) would be asymmetric whenever
   // the two names diverge.
-  const branch =
-    git(["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true }) || "main";
+  const branch = currentBranch();
   try {
     await gitAsync(["pull", "--no-rebase", "origin", branch]);
   } catch (e) {
@@ -876,7 +992,7 @@ export async function pull(): Promise<
     if (/conflict/i.test(msg)) {
       git(["merge", "--abort"], { allowFail: true });
       throw new Error(
-        "The cloud and local versions conflict, so this was aborted to protect your local files. Resolve it manually, then sync again."
+        "Some of the same files changed in both versions, so combining stopped safely. Nothing on this computer was lost. Choose this computer or the cloud version instead."
       );
     }
     throw e;
@@ -913,8 +1029,7 @@ export async function restoreFromCloud(): Promise<
   snapshotLibrary("local state before restore");
   const tip = git(["rev-parse", "HEAD"], { allowFail: true });
   if (tip) git(["update-ref", "refs/ssm/pre-restore", tip], { allowFail: true });
-  const branch =
-    git(["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true }) || "main";
+  const branch = currentBranch();
   await gitAsync(["fetch", "origin"]);
   git(["reset", "--hard", `origin/${branch}`]);
   const { imported, mismatches } = importManifest();
@@ -929,6 +1044,7 @@ export interface SyncCheck {
   ahead: number; // local commits not yet pushed
   behind: number; // cloud commits not yet pulled
   needsBackup: boolean; // dirty || ahead > 0
+  canUndoCloudOverwrite: boolean;
 }
 
 /**
@@ -946,6 +1062,7 @@ export async function syncCheck(): Promise<SyncCheck> {
     ahead: 0,
     behind: 0,
     needsBackup: false,
+    canUndoCloudOverwrite: false,
   };
   if (!isGitRepo() || !remoteUrl()) return idle;
 
@@ -961,8 +1078,7 @@ export async function syncCheck(): Promise<SyncCheck> {
 
   // Compare against the latest cloud tip.
   await gitAsync(["fetch", "origin"], { allowFail: true });
-  const branch =
-    git(["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true }) || "main";
+  const branch = currentBranch();
   const counts = git(
     ["rev-list", "--left-right", "--count", `origin/${branch}...HEAD`],
     { allowFail: true }
@@ -979,6 +1095,7 @@ export async function syncCheck(): Promise<SyncCheck> {
     ahead,
     behind,
     needsBackup: lines.length > 0 || ahead > 0,
+    canUndoCloudOverwrite: canUndoCloudOverwrite(branch),
   };
 }
 

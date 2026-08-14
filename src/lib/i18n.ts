@@ -343,8 +343,8 @@ export const DICT = {
   // GitHub backup & sync
   sync_title: { zh: "GitHub 备份与同步", en: "GitHub Backup & Sync" },
   sync_desc: {
-    zh: "把技能库备份到一个私有 GitHub 仓库，并在多台机器间同步。各机器「哪个 agent 用哪个技能」不同步、各自决定。",
-    en: "Back up your library to a private GitHub repo and sync across machines. Per-machine agent assignments are not synced.",
+    zh: "安全保存你的技能库，也可以把不同电脑上的改动带回来。",
+    en: "Keep your skill library safe and bring in changes from your other computers.",
   },
   sync_connected: { zh: "已连接", en: "Connected" },
   sync_not_connected: { zh: "未连接", en: "Not connected" },
@@ -384,8 +384,8 @@ export const DICT = {
   sync_restore_hint: { zh: "云端 → 本地 · ⚠ 覆盖本地改动", en: "Cloud → local · ⚠ overwrites local" },
   sync_disconnect_hint: { zh: "解除与该仓库的关联（不删本地文件）", en: "Unlink this repo (keeps local files)" },
   sync_check_uptodate: {
-    zh: "✅ 本地与云端一致，无需备份。",
-    en: "✅ Local matches the cloud — nothing to back up.",
+    zh: "已安全备份",
+    en: "Safely backed up",
   },
   sync_check_needs_backup: {
     zh: "● 有 {n} 处本地改动还没备份 —— 点「⬆ 立即备份」上传。",
@@ -395,6 +395,97 @@ export const DICT = {
     zh: "⬇ 云端有 {n} 个你还没有的更新 —— 点「从云端同步」拉取。",
     en: "⬇ {n} cloud update(s) you don't have — click “Sync from cloud”.",
   },
+  sync_state_checking: { zh: "正在检查备份状态…", en: "Checking your backup…" },
+  sync_state_check_failed: {
+    zh: "暂时无法检查备份状态",
+    en: "Couldn't check the backup status",
+  },
+  sync_action_failed: { zh: "这次操作没有完成", en: "This action wasn't completed" },
+  sync_state_uptodate_desc: {
+    zh: "这台电脑和云端内容一致。",
+    en: "This computer and the cloud match.",
+  },
+  sync_state_local: {
+    zh: "这台电脑有 {n} 项新改动",
+    en: "This computer has {n} new change(s)",
+  },
+  sync_state_local_desc: {
+    zh: "把它们保存到云端，就不会只留在这台电脑上。",
+    en: "Back them up so they aren't only stored on this computer.",
+  },
+  sync_state_cloud: {
+    zh: "云端有 {n} 个新版本",
+    en: "The cloud has {n} new version(s)",
+  },
+  sync_state_cloud_desc: {
+    zh: "这些更新可能来自你的另一台电脑。",
+    en: "These updates may have come from another computer.",
+  },
+  sync_state_diverged: {
+    zh: "这台电脑和云端都有不同改动",
+    en: "This computer and the cloud both have different changes",
+  },
+  sync_state_diverged_desc: {
+    zh: "本机有 {local} 项，云端有 {cloud} 个版本。先选择想保留的方式。",
+    en: "This computer has {local}; the cloud has {cloud}. Choose what you want to keep.",
+  },
+  sync_action_backup_local: {
+    zh: "备份这台电脑的改动",
+    en: "Back up this computer",
+  },
+  sync_action_get_cloud: {
+    zh: "获取其他电脑的更新",
+    en: "Get updates from the cloud",
+  },
+  sync_action_choose: { zh: "选择保留方式", en: "Choose what to keep" },
+  sync_action_retry: { zh: "重新检查", en: "Check again" },
+  sync_more: { zh: "备份详情与其他操作", en: "Backup details and other actions" },
+  sync_choose_title: { zh: "你想保留哪一份？", en: "What do you want to keep?" },
+  sync_choose_summary: {
+    zh: "本机有 {local} 项改动，云端有 {cloud} 个不同版本。",
+    en: "This computer has {local} change(s); the cloud has {cloud} different version(s).",
+  },
+  sync_recommended: { zh: "推荐", en: "Recommended" },
+  sync_choice_merge: { zh: "合并两边的内容", en: "Combine both versions" },
+  sync_choice_merge_desc: {
+    zh: "保留本机内容，并加入云端独有的内容；遇到冲突就停止。",
+    en: "Keep this computer's content and add cloud-only content; stop if anything conflicts.",
+  },
+  sync_choice_local: { zh: "以这台电脑为准", en: "Use this computer" },
+  sync_choice_local_desc: {
+    zh: "让云端与这台电脑完全一致；旧云端会先留下可恢复版本。",
+    en: "Make the cloud exactly match this computer; the old cloud version stays recoverable.",
+  },
+  sync_choice_cloud: { zh: "以云端为准", en: "Use the cloud version" },
+  sync_choice_cloud_desc: {
+    zh: "让这台电脑恢复成云端版本；本机现状会先留下还原点。",
+    en: "Restore this computer to the cloud version; the current local state gets a restore point.",
+  },
+  sync_overwrite_local_confirm: {
+    zh: "云端将变得和这台电脑完全一致。云端独有的内容会从当前备份中移走，但旧云端版本仍可恢复。本机内容不会被修改。",
+    en: "The cloud will exactly match this computer. Cloud-only content will leave the current backup, but the old cloud version remains recoverable. Nothing on this computer will change.",
+  },
+  sync_overwrite_local_action: {
+    zh: "以这台电脑为准",
+    en: "Use this computer",
+  },
+  sync_overwrite_done: {
+    zh: "云端已改成这台电脑的版本",
+    en: "The cloud now matches this computer",
+  },
+  sync_undo_overwrite: {
+    zh: "撤销上次云端覆盖",
+    en: "Undo the last cloud overwrite",
+  },
+  sync_undo_overwrite_hint: {
+    zh: "把云端恢复到覆盖前；这台电脑不会改变。",
+    en: "Restore the cloud to before the overwrite; this computer won't change.",
+  },
+  sync_undo_overwrite_confirm: {
+    zh: "把云端恢复到上次覆盖前的版本？这台电脑的内容不会改变。",
+    en: "Restore the cloud to its version before the last overwrite? Nothing on this computer will change.",
+  },
+  sync_undo_done: { zh: "云端已恢复到覆盖前", en: "Cloud overwrite undone" },
   sync_restore: { zh: "恢复到云端版本", en: "Restore from cloud" },
   sync_restore_confirm: {
     zh: "这会丢弃本地改动，强制恢复成云端最新版本（恢复前会自动留一个本地还原点）。确定吗？",

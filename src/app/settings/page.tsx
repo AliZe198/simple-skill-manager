@@ -8,6 +8,10 @@ import { useToast } from "@/components/Toast";
 import { Button } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
+import {
+  SyncChoiceDialog,
+  type SyncChoice,
+} from "@/components/SyncChoiceDialog";
 import { TagManager } from "@/components/TagManager";
 import type { AppConfig, DetectedAgent, TargetMode } from "@/lib/types";
 import type {
@@ -42,11 +46,17 @@ export default function SettingsPage() {
   const toast = useToast();
   const [busy, setBusy] = useState("");
   const [syncBusy, setSyncBusy] = useState("");
+  const [syncError, setSyncError] = useState("");
   const [preview, setPreview] = useState<ConnectPreview | null>(null);
   const [syncConfirm, setSyncConfirm] = useState<
-    "backup" | "pull" | "restoreFromCloud" | null
+    | "backup"
+    | "pull"
+    | "overwriteCloudWithLocal"
+    | "restoreFromCloud"
+    | "undoCloudOverwrite"
+    | null
   >(null);
-  const [checkResult, setCheckResult] = useState<SyncCheck | null>(null);
+  const [syncChoiceOpen, setSyncChoiceOpen] = useState(false);
   const [ignoreTarget, setIgnoreTarget] = useState<{
     id: string;
     label: string;
@@ -86,6 +96,16 @@ export default function SettingsPage() {
   const { data: sync, mutate: mutateSync } = useSWR<SyncStatus>(
     "/api/sync",
     fetcher,
+    swrOpts
+  );
+  const {
+    data: checkResult,
+    error: checkError,
+    isLoading: checkLoading,
+    mutate: mutateCheck,
+  } = useSWR<SyncCheck>(
+    sync?.connected ? "sync:checkChanges" : null,
+    () => apiPost<SyncCheck>("/api/sync", { action: "checkChanges" }),
     swrOpts
   );
 
@@ -167,28 +187,15 @@ export default function SettingsPage() {
     okMsg: (d: Record<string, unknown>) => string
   ) {
     setSyncBusy(action);
-    setCheckResult(null); // a backup/pull/restore makes any prior check stale
+    setSyncError("");
     try {
       const d = await apiPost<Record<string, unknown>>("/api/sync", { action });
       if (d.flow === "refused") toast(String(d.message ?? ""), "error");
       else toast(okMsg(d), "success");
-      mutateSync();
     } catch (e) {
-      toast((e as Error).message, "error");
+      setSyncError((e as Error).message);
     } finally {
-      setSyncBusy("");
-    }
-  }
-
-  async function runCheck() {
-    setSyncBusy("check");
-    try {
-      setCheckResult(
-        await apiPost<SyncCheck>("/api/sync", { action: "checkChanges" })
-      );
-    } catch (e) {
-      toast((e as Error).message, "error");
-    } finally {
+      await Promise.allSettled([mutateSync(), mutateCheck()]);
       setSyncBusy("");
     }
   }
@@ -235,6 +242,76 @@ export default function SettingsPage() {
       setSyncBusy("");
     }
   }
+
+  function chooseSyncAction(choice: SyncChoice) {
+    setSyncChoiceOpen(false);
+    setSyncConfirm(choice);
+  }
+
+  const localChangeCount = checkResult
+    ? Math.max(checkResult.changedCount, checkResult.ahead)
+    : 0;
+  const hasLocalChanges = !!checkResult?.needsBackup;
+  const hasCloudChanges = (checkResult?.behind ?? 0) > 0;
+  const hasDifferentChanges = hasLocalChanges && hasCloudChanges;
+
+  const syncStateTitle = syncError
+    ? t("sync_action_failed")
+    : checkError
+    ? t("sync_state_check_failed")
+    : checkLoading || !checkResult
+      ? t("sync_state_checking")
+      : hasDifferentChanges
+        ? t("sync_state_diverged")
+        : hasLocalChanges
+          ? t("sync_state_local").replace("{n}", String(localChangeCount))
+          : hasCloudChanges
+            ? t("sync_state_cloud").replace(
+                "{n}",
+                String(checkResult.behind)
+              )
+            : t("sync_check_uptodate");
+
+  const syncStateBody = syncError
+    ? syncError
+    : checkError
+    ? String((checkError as Error).message || "")
+    : checkLoading || !checkResult
+      ? ""
+      : hasDifferentChanges
+        ? t("sync_state_diverged_desc")
+            .replace("{local}", String(localChangeCount))
+            .replace("{cloud}", String(checkResult.behind))
+        : hasLocalChanges
+          ? t("sync_state_local_desc")
+          : hasCloudChanges
+            ? t("sync_state_cloud_desc")
+            : t("sync_state_uptodate_desc");
+
+  function runPrimarySyncAction() {
+    setSyncError("");
+    if (checkError) {
+      void mutateCheck();
+    } else if (hasDifferentChanges) {
+      setSyncChoiceOpen(true);
+    } else if (hasLocalChanges) {
+      setSyncConfirm("backup");
+    } else if (hasCloudChanges) {
+      setSyncConfirm("pull");
+    }
+  }
+
+  const primarySyncLabel = checkError
+    ? t("sync_action_retry")
+    : checkLoading || !checkResult
+      ? t("sync_state_checking")
+      : hasDifferentChanges
+        ? t("sync_action_choose")
+        : hasLocalChanges
+          ? t("sync_action_backup_local")
+          : hasCloudChanges
+            ? t("sync_action_get_cloud")
+            : t("sync_check_uptodate");
 
   function previewBody(p: ConnectPreview): string {
     const repo = `${p.repoFull}${p.isPublic ? `\n${t("sync_repo_public_warn")}` : ""}`;
@@ -384,30 +461,20 @@ export default function SettingsPage() {
       </h1>
 
       <section className="card flex flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <h2 className="font-extrabold text-ink-header">
             ☁️ {t("sync_title")}
           </h2>
-          {sync?.connected && (
-            <div className="flex shrink-0 gap-2">
-              <Button
-                variant="default"
-                disabled={!!syncBusy}
-                title={t("sync_check_hint")}
-                onClick={runCheck}
-              >
-                {syncBusy === "check" ? "…" : `🔍 ${t("sync_check")}`}
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={!!syncBusy}
-                title={t("sync_disconnect_hint")}
-                onClick={() => runSync("disconnect", () => t("toast_done"))}
-              >
-                {t("sync_disconnect")}
-              </Button>
-            </div>
-          )}
+          <span
+            className={
+              "badge " +
+              (sync?.connected
+                ? "bg-mint text-white"
+                : "bg-stone-100 text-ink-muted")
+            }
+          >
+            {sync?.connected ? t("sync_connected") : t("sync_not_connected")}
+          </span>
         </div>
         <p className="text-sm text-ink-secondary">{t("sync_desc")}</p>
 
@@ -471,79 +538,8 @@ export default function SettingsPage() {
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span
-            className={
-              "badge " +
-              (sync?.connected
-                ? "bg-mint text-white"
-                : "bg-stone-100 text-ink-muted")
-            }
-          >
-            {sync?.connected ? t("sync_connected") : t("sync_not_connected")}
-          </span>
-          {sync?.remoteUrl && (
-            <a
-              href={webUrlFromRemote(sync.remoteUrl)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="break-all font-mono text-xs text-ink-disabled underline decoration-dotted underline-offset-2 transition-colors hover:text-accent"
-            >
-              {webUrlFromRemote(sync.remoteUrl)} ↗
-            </a>
-          )}
-        </div>
-        {sync?.connected && (
-          <div className="text-xs text-ink-muted">
-            {sync.lastSync && (
-              <span>
-                {t("sync_last")}: {new Date(sync.lastSync).toLocaleString()} ·{" "}
-              </span>
-            )}
-            {sync.skillCount} {t("sync_skills_n")}
-          </div>
-        )}
-
-        {checkResult?.connected && (
-          <div
-            className={
-              "rounded-card border-2 px-3 py-2 text-xs " +
-              (checkResult.needsBackup
-                ? "border-status-warning/50 bg-status-warning/10 text-ink-body"
-                : checkResult.behind > 0
-                  ? "border-line/40 bg-content/60 text-ink-body"
-                  : "border-mint/50 bg-mint-light text-mint-active")
-            }
-          >
-            {checkResult.needsBackup && (
-              <div className="font-bold">
-                {t("sync_check_needs_backup").replace(
-                  "{n}",
-                  String(checkResult.changedCount || checkResult.ahead)
-                )}
-              </div>
-            )}
-            {checkResult.behind > 0 && (
-              <div className={checkResult.needsBackup ? "mt-1" : "font-bold"}>
-                {t("sync_check_behind").replace("{n}", String(checkResult.behind))}
-              </div>
-            )}
-            {!checkResult.needsBackup && checkResult.behind === 0 && (
-              <div className="font-bold">{t("sync_check_uptodate")}</div>
-            )}
-            {checkResult.changedSample.length > 0 && (
-              <div className="mt-1 break-all font-mono text-[11px] text-ink-muted">
-                {checkResult.changedSample.join("、")}
-                {checkResult.changedCount > checkResult.changedSample.length
-                  ? " …"
-                  : ""}
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="flex flex-wrap gap-2">
-          {!sync?.connected ? (
+        {!sync?.connected ? (
+          <div className="flex flex-wrap gap-2">
             <div className="flex w-full flex-col gap-2">
               {/* Primary: connect to an existing repo */}
               <div className="flex flex-wrap items-center gap-2">
@@ -616,35 +612,125 @@ export default function SettingsPage() {
                 </div>
               </details>
             </div>
-          ) : (
-            <>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div
+              aria-live="polite"
+              className={
+                "rounded-card border-2 p-4 " +
+                (syncError || checkError || hasDifferentChanges
+                  ? "border-status-warning/60 bg-status-warning/10"
+                  : hasLocalChanges || hasCloudChanges
+                    ? "border-line/40 bg-white/45"
+                    : "border-mint/50 bg-mint-light")
+              }
+            >
+              <div className="flex items-start gap-3">
+                <span
+                  className={
+                    "mt-1 h-3 w-3 shrink-0 rounded-full " +
+                    (syncError || checkError || hasDifferentChanges
+                      ? "bg-status-warning"
+                      : checkLoading || !checkResult
+                        ? "animate-pulse bg-line"
+                        : "bg-mint")
+                  }
+                />
+                <div className="min-w-0">
+                  <p className="font-extrabold text-ink-header">{syncStateTitle}</p>
+                  {syncStateBody ? (
+                    <p className="mt-1 text-sm leading-relaxed text-ink-secondary">
+                      {syncStateBody}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div>
               <Button
-                variant="primary"
-                disabled={!!syncBusy}
-                title={t("sync_backup_hint")}
-                onClick={() => setSyncConfirm("backup")}
+                variant={
+                  !checkError && checkResult && !hasLocalChanges && !hasCloudChanges
+                    ? "default"
+                    : "primary"
+                }
+                className="w-full sm:w-auto"
+                disabled={
+                  !!syncBusy ||
+                  checkLoading ||
+                  (!checkError && !!checkResult && !hasLocalChanges && !hasCloudChanges)
+                }
+                onClick={runPrimarySyncAction}
               >
-                {syncBusy === "backup" ? "…" : `⬆ ${t("sync_backup")}`}
+                {syncBusy ? "…" : primarySyncLabel}
               </Button>
-              <Button
-                variant="default"
-                disabled={!!syncBusy}
-                title={t("sync_pull_hint")}
-                onClick={() => setSyncConfirm("pull")}
-              >
-                {syncBusy === "pull" ? "…" : `⬇ ${t("sync_pull")}`}
-              </Button>
-              <Button
-                variant="danger"
-                disabled={!!syncBusy}
-                title={t("sync_restore_hint")}
-                onClick={() => setSyncConfirm("restoreFromCloud")}
-              >
-                {syncBusy === "restoreFromCloud" ? "…" : `↺ ${t("sync_restore")}`}
-              </Button>
-            </>
-          )}
-        </div>
+            </div>
+
+            <details className="rounded-card border-2 border-line/25 bg-white/25 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-bold text-ink-secondary hover:text-mint-active">
+                {t("sync_more")}
+              </summary>
+              <div className="mt-3 flex flex-col gap-3 border-t border-line/20 pt-3">
+                <div className="text-xs leading-relaxed text-ink-muted">
+                  {sync.lastSync ? (
+                    <span>
+                      {t("sync_last")}: {new Date(sync.lastSync).toLocaleString()} ·{" "}
+                    </span>
+                  ) : null}
+                  {sync.skillCount} {t("sync_skills_n")}
+                </div>
+                {sync.remoteUrl ? (
+                  <a
+                    href={webUrlFromRemote(sync.remoteUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="break-all text-xs font-bold text-mint-active underline decoration-dotted underline-offset-2"
+                  >
+                    {webUrlFromRemote(sync.remoteUrl)} ↗
+                  </a>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  {hasCloudChanges ? (
+                    <Button
+                      variant="default"
+                      disabled={!!syncBusy}
+                      onClick={() => setSyncConfirm("overwriteCloudWithLocal")}
+                    >
+                      {t("sync_overwrite_local_action")}
+                    </Button>
+                  ) : null}
+                  {checkResult?.canUndoCloudOverwrite ? (
+                    <Button
+                      variant="default"
+                      disabled={!!syncBusy}
+                      title={t("sync_undo_overwrite_hint")}
+                      onClick={() => setSyncConfirm("undoCloudOverwrite")}
+                    >
+                      {t("sync_undo_overwrite")}
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="ghost"
+                    disabled={!!syncBusy}
+                    title={t("sync_restore_hint")}
+                    onClick={() => setSyncConfirm("restoreFromCloud")}
+                  >
+                    {t("sync_choice_cloud")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={!!syncBusy}
+                    title={t("sync_disconnect_hint")}
+                    onClick={() => runSync("disconnect", () => t("toast_done"))}
+                  >
+                    {t("sync_disconnect")}
+                  </Button>
+                </div>
+              </div>
+            </details>
+          </div>
+        )}
       </section>
 
       <section className="card flex flex-col gap-3">
@@ -813,31 +899,67 @@ export default function SettingsPage() {
         />
       )}
 
+      {syncChoiceOpen && (
+        <SyncChoiceDialog
+          localCount={localChangeCount}
+          cloudCount={checkResult?.behind ?? 0}
+          onCancel={() => setSyncChoiceOpen(false)}
+          onChoose={chooseSyncAction}
+        />
+      )}
+
       {syncConfirm && (
         <ConfirmDialog
           title={
             syncConfirm === "backup"
-              ? `⬆ ${t("sync_backup")}`
+              ? t("sync_action_backup_local")
               : syncConfirm === "pull"
-                ? `⬇ ${t("sync_pull")}`
-                : `↺ ${t("sync_restore")}`
+                ? t("sync_action_get_cloud")
+                : syncConfirm === "overwriteCloudWithLocal"
+                  ? t("sync_choice_local")
+                  : syncConfirm === "undoCloudOverwrite"
+                    ? t("sync_undo_overwrite")
+                    : t("sync_choice_cloud")
           }
           body={
             syncConfirm === "backup"
               ? t("sync_backup_confirm")
               : syncConfirm === "pull"
                 ? t("sync_pull_confirm")
-                : t("sync_restore_confirm")
+                : syncConfirm === "overwriteCloudWithLocal"
+                  ? t("sync_overwrite_local_confirm")
+                  : syncConfirm === "undoCloudOverwrite"
+                    ? t("sync_undo_overwrite_confirm")
+                    : t("sync_restore_confirm")
           }
-          danger={syncConfirm === "restoreFromCloud"}
+          confirmLabel={
+            syncConfirm === "overwriteCloudWithLocal"
+              ? t("sync_overwrite_local_action")
+              : syncConfirm === "restoreFromCloud"
+                ? t("sync_choice_cloud")
+                : syncConfirm === "undoCloudOverwrite"
+                  ? t("sync_undo_overwrite")
+                  : undefined
+          }
+          danger={
+            syncConfirm === "restoreFromCloud" ||
+            syncConfirm === "overwriteCloudWithLocal"
+          }
           onCancel={() => setSyncConfirm(null)}
           onConfirm={() => {
             const a = syncConfirm;
             setSyncConfirm(null);
-            if (a === "backup") runSync("backup", () => `⬆ ${t("toast_done")}`);
+            if (a === "backup") runSync("backup", () => t("toast_done"));
             else if (a === "pull")
-              runSync("pull", (d) => `⬇ ${t("sync_imported_n")} ${d.imported ?? 0}`);
-            else runSync("restoreFromCloud", () => `↺ ${t("sync_restored")}`);
+              runSync(
+                "pull",
+                (d) => `${t("sync_imported_n")} ${d.imported ?? 0}`
+              );
+            else if (a === "overwriteCloudWithLocal")
+              runSync("overwriteCloudWithLocal", () => t("sync_overwrite_done"));
+            else if (a === "undoCloudOverwrite")
+              runSync("undoCloudOverwrite", () => t("sync_undo_done"));
+            else runSync("restoreFromCloud", () => t("sync_restored"));
           }}
         />
       )}

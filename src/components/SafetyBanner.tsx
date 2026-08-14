@@ -37,7 +37,7 @@ export function SafetyBanner() {
     <div
       role="status"
       className={
-        "flex flex-wrap items-center gap-x-3 gap-y-1 border-b-2 px-8 py-2 text-sm " +
+        "flex flex-wrap items-center gap-x-2 gap-y-1 border-b-2 px-3 py-2 text-xs sm:gap-x-3 sm:px-8 sm:text-sm " +
         (real
           ? "border-status-error/40 bg-status-error/10 text-status-error-active"
           : "border-mint/40 bg-mint-light text-mint-active")
@@ -55,7 +55,7 @@ export function SafetyBanner() {
       <span className="font-bold">
         {real ? t("banner_real_desc") : t("banner_sandbox_desc")}
       </span>
-      <span className="ml-auto break-all font-mono text-xs opacity-70">
+      <span className="ml-auto hidden break-all font-mono text-xs opacity-70 sm:inline">
         {config.agentRoot}
       </span>
       <button

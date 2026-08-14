@@ -98,7 +98,7 @@ Writes outside those two are rejected, including symlinks that try to escape. A 
 
 Settings has a GitHub backup panel. It pushes your library to a private repo of your own, using the `gh` CLI you are already logged into.
 
-Backup only uploads. Sync merges and keeps local changes. Restore overwrites, after saving a local restore point first.
+The app checks automatically and shows one next step instead of making you choose between Git operations. When both sides changed, you can combine them, make the cloud match this computer, or restore this computer from the cloud. Every overwrite keeps a recovery point, and cloud replacement uses a guarded update that stops if the cloud changes again while you are confirming.
 
 Skill files travel between machines along with their hashes, origins and tags. Which agent uses which skill does not, so every machine keeps its own setup.
 

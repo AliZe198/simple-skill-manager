@@ -23,13 +23,13 @@ export function Sidebar() {
   const detected = (agents ?? []).filter((a) => a.detected && !a.ignored);
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col gap-2 border-r-2 border-line/30 bg-content/60 p-4">
-      <div className="mb-2 px-2">
-        <div className="flex items-center gap-2 text-ink-header">
+    <aside className="flex w-16 shrink-0 flex-col gap-2 overflow-y-auto border-r-2 border-line/30 bg-content/60 p-2 sm:w-64 sm:p-4">
+      <div className="mb-2 px-1 sm:px-2">
+        <div className="flex items-center justify-center gap-2 text-ink-header sm:justify-start">
           <span className="text-2xl">🏝️</span>
-          <span className="text-lg font-extrabold">{t("appName")}</span>
+          <span className="hidden text-lg font-extrabold sm:inline">{t("appName")}</span>
         </div>
-        <p className="mt-1 text-xs leading-snug text-ink-secondary">
+        <p className="mt-1 hidden text-xs leading-snug text-ink-secondary sm:block">
           {t("tagline")}
         </p>
       </div>
@@ -42,23 +42,23 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-[12px] px-3 py-2 text-sm font-bold transition-colors",
+                "flex items-center justify-center gap-3 rounded-[12px] px-2 py-2 text-sm font-bold transition-colors sm:justify-start sm:px-3",
                 active
                   ? "bg-mint text-white shadow-soft"
                   : "text-ink-body hover:bg-mint-light"
               )}
             >
-              <span>{item.icon}</span>
-              {t(item.key)}
+              <span aria-hidden="true">{item.icon}</span>
+              <span className="sr-only sm:not-sr-only">{t(item.key)}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="mt-3 px-2 text-xs font-bold uppercase tracking-wide text-ink-secondary">
+      <div className="mt-3 hidden px-2 text-xs font-bold uppercase tracking-wide text-ink-secondary sm:block">
         {t("nav_workspace")}
       </div>
-      <nav className="flex flex-col gap-1">
+      <nav className="hidden flex-col gap-1 sm:flex">
         {detected.map((a) => {
           const href = `/workspace/${a.id}`;
           const active = pathname === href;
@@ -83,17 +83,17 @@ export function Sidebar() {
         )}
       </nav>
 
-      <div className="mt-auto flex items-center justify-center gap-1 rounded-pill border-2 border-line/40 bg-white/60 p-1">
+      <div className="mt-auto flex flex-col items-center justify-center gap-1 rounded-pill border-2 border-line/40 bg-white/60 p-1 sm:flex-row">
         {(["zh", "en"] as const).map((l) => (
           <button
             key={l}
             onClick={() => setLang(l)}
             className={cn(
-              "flex-1 rounded-pill px-3 py-1 text-xs font-bold transition-colors",
+              "w-full rounded-pill px-1 py-1 text-[10px] font-bold transition-colors sm:flex-1 sm:px-3 sm:text-xs",
               lang === l ? "bg-mint text-white" : "text-ink-secondary"
             )}
           >
-            {l === "zh" ? "中文" : "EN"}
+            {l === "zh" ? "中" : "EN"}
           </button>
         ))}
       </div>

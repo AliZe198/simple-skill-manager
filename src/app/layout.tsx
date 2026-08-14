@@ -37,7 +37,9 @@ export default function RootLayout({
               <main className="flex flex-1 flex-col overflow-hidden">
                 <SafetyBanner />
                 <div className="flex-1 overflow-y-auto">
-                  <div className="mx-auto max-w-6xl px-8 py-8">{children}</div>
+                  <div className="mx-auto max-w-6xl px-4 py-5 sm:px-8 sm:py-8">
+                    {children}
+                  </div>
                 </div>
               </main>
             </div>

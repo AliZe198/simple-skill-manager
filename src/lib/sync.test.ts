@@ -280,6 +280,76 @@ describe("restoreFromCloud (rollback to cloud — Bug B)", () => {
   });
 });
 
+describe("overwrite cloud with this machine", () => {
+  it("preserves the old cloud, replaces main, and can safely undo", async () => {
+    const bare = initBare();
+    await seedRemote(bare, "impeccable");
+
+    // This machine starts at the common cloud version, then adds local content.
+    const localBase = fs.mkdtempSync(path.join(os.tmpdir(), "ssm-local-wins-"));
+    process.env.SSM_AGENT_ROOT = path.join(localBase, "home");
+    process.env.SSM_DATA_DIR = path.join(localBase, "data");
+    fs.mkdirSync(process.env.SSM_AGENT_ROOT, { recursive: true });
+    const { connectToRemote } = await import("./sync");
+    await connectToRemote(bare, {
+      localHasContent: false,
+      remoteHasCommits: true,
+      defaultBranch: "main",
+    });
+    const localLib = path.join(process.env.SSM_DATA_DIR, "library");
+    fs.mkdirSync(path.join(localLib, "local-only"), { recursive: true });
+    fs.writeFileSync(path.join(localLib, "local-only", "SKILL.md"), "LOCAL");
+
+    // Another machine adds a different cloud-only skill, creating divergence.
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "ssm-cloud-newer-"));
+    execFileSync("git", ["clone", bare, other], { stdio: "pipe" });
+    fs.mkdirSync(path.join(other, "cloud-only"));
+    fs.writeFileSync(path.join(other, "cloud-only", "SKILL.md"), "CLOUD");
+    raw(other, ["add", "-A"]);
+    raw(other, ["commit", "-m", "cloud-only change"]);
+    raw(other, ["push", "origin", "main"]);
+
+    const { overwriteCloudWithLocal, undoCloudOverwrite, syncCheck } =
+      await import("./sync");
+    const overwritten = await overwriteCloudWithLocal();
+    expect(overwritten.recoveryBranch).toMatch(/^ssm-recovery\/cloud-before-/);
+    expect(
+      execFileSync("git", ["--git-dir", bare, "show", "main:local-only/SKILL.md"], {
+        encoding: "utf8",
+      }).trim()
+    ).toBe("LOCAL");
+    expect(() =>
+      execFileSync("git", ["--git-dir", bare, "show", "main:cloud-only/SKILL.md"], {
+        stdio: "pipe",
+      })
+    ).toThrow();
+    expect(
+      execFileSync(
+        "git",
+        [
+          "--git-dir",
+          bare,
+          "show",
+          `${overwritten.recoveryBranch}:cloud-only/SKILL.md`,
+        ],
+        { encoding: "utf8" }
+      ).trim()
+    ).toBe("CLOUD");
+    expect((await syncCheck()).canUndoCloudOverwrite).toBe(true);
+
+    await undoCloudOverwrite();
+    expect(
+      execFileSync("git", ["--git-dir", bare, "show", "main:cloud-only/SKILL.md"], {
+        encoding: "utf8",
+      }).trim()
+    ).toBe("CLOUD");
+    expect(fs.readFileSync(path.join(localLib, "local-only", "SKILL.md"), "utf8")).toBe(
+      "LOCAL"
+    );
+    expect((await syncCheck()).canUndoCloudOverwrite).toBe(false);
+  });
+});
+
 describe("reconcile after sync (cloud-side deletions)", () => {
   it("pull removes skills deleted on the other machine — no ghost row, no dangling link", async () => {
     const bare = initBare();

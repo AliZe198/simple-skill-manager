@@ -5,6 +5,8 @@ import {
   connectPreview,
   connect,
   backup,
+  overwriteCloudWithLocal,
+  undoCloudOverwrite,
   pull,
   restoreFromCloud,
   syncCheck,
@@ -41,6 +43,10 @@ export async function POST(req: NextRequest) {
       return handle(() => connect(opts));
     case "backup":
       return handle(() => backup());
+    case "overwriteCloudWithLocal":
+      return handle(() => overwriteCloudWithLocal());
+    case "undoCloudOverwrite":
+      return handle(() => undoCloudOverwrite());
     case "pull":
       return handle(() => pull());
     case "restoreFromCloud":
