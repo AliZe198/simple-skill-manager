@@ -113,13 +113,17 @@ export function SkillListRow({
     <div
       onClick={onRowClick}
       className={cn(
-        "group relative flex min-h-[52px] cursor-pointer flex-wrap items-center gap-3 rounded-bubble border-2 bg-content/60 px-3 py-2 transition-colors hover:border-line/60 hover:bg-content sm:flex-nowrap",
-        bundled ? "border-l-4 border-l-amber-400" : "border-l-4 border-l-mint"
+        "group relative flex min-h-[68px] cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 rounded-[18px] border-2 px-4 py-3 shadow-soft transition-[background-color,border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-soft-hover sm:flex-nowrap",
+        bundled
+          ? "border-amber-200/80 bg-amber-50/55 hover:border-amber-300"
+          : skill.parked
+            ? "border-line/25 bg-content/55 hover:border-line/45 hover:bg-content/75"
+            : "border-mint/25 bg-content/75 hover:border-mint/50 hover:bg-content"
       )}
     >
       {/* Main info */}
-      <div className="flex min-w-0 w-full flex-col gap-0.5 sm:w-auto sm:flex-1">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 w-full flex-col gap-1 pr-9 sm:w-auto sm:flex-1 sm:pr-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <button
             onClick={() => setShowDetail(true)}
             title={t("lbl_view_detail")}
@@ -204,7 +208,11 @@ export function SkillListRow({
       {!bundled && <CompactTagBar hash={skill.contentHash} tags={skill.tags} onChanged={onChanged} />}
 
       {/* Agent toggles / belongs-to */}
-      <div className="ml-auto flex max-w-full shrink items-center gap-1.5 overflow-x-auto">
+      <div
+        className="ml-0 flex max-w-full flex-wrap items-center gap-1 rounded-[14px] border border-line/20 bg-white/50 p-1.5 shadow-soft sm:ml-auto sm:max-w-[360px] sm:justify-end"
+        aria-label={bundled ? t("lbl_builtin_of") : t("lbl_agent_switches")}
+        title={bundled ? t("lbl_builtin_of") : t("lbl_agent_switches")}
+      >
         {bundled ? (
           (builtInAgentIds.length ? builtInAgentIds : skill.occurrences.map((o) => o.agentId))
             .filter((v, i, a) => a.indexOf(v) === i)
@@ -233,15 +241,15 @@ export function SkillListRow({
                 }
                 title={`${a.label} · ${active ? t("act_disable") : t("act_enable")}`}
                 className={cn(
-                  "relative rounded-full transition-all disabled:opacity-50",
+                  "relative flex h-8 w-8 items-center justify-center rounded-full border transition-[background-color,border-color,box-shadow,filter,opacity] disabled:opacity-50",
                   active
-                    ? "ring-2 ring-mint ring-offset-1"
-                    : "opacity-40 grayscale hover:opacity-80 hover:grayscale-0"
+                    ? "border-mint/60 bg-mint-light shadow-soft"
+                    : "border-transparent opacity-45 grayscale hover:border-line/25 hover:bg-content hover:opacity-85 hover:grayscale-0"
                 )}
               >
                 <AgentLogo agentId={a.id} label={a.label} size="sm" />
                 {active && (
-                  <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-mint text-[8px] font-bold text-white ring-1 ring-white">
+                  <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-mint text-[9px] font-extrabold text-white ring-2 ring-white">
                     ✓
                   </span>
                 )}
@@ -252,7 +260,7 @@ export function SkillListRow({
       </div>
 
       {/* More actions */}
-      <div className="relative shrink-0">
+      <div className="absolute right-3 top-3 shrink-0 sm:relative sm:right-auto sm:top-auto">
         <button
           disabled={busy}
           onClick={(e) => {

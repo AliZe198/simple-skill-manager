@@ -145,6 +145,7 @@ export const DICT = {
   builtin_tab: { zh: "Agent 内置", en: "Built-in" },
   builtin_suffix: { zh: "内置", en: "built-in" },
   lbl_builtin_of: { zh: "属于哪个 Agent", en: "Built-in of" },
+  lbl_agent_switches: { zh: "选择 Agent", en: "Choose agents" },
   // My Library zones: my own skills vs agent-bundled (quarantined) skills.
   zone_mine: { zh: "我的技能", en: "My skills" },
   zone_trash: { zh: "回收站", en: "Trash" },
