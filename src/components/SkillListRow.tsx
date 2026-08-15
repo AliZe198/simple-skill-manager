@@ -209,7 +209,7 @@ export function SkillListRow({
 
       {/* Agent toggles / belongs-to */}
       <div
-        className="ml-0 flex max-w-full flex-wrap items-center gap-1 rounded-[14px] border border-line/20 bg-white/50 p-1.5 shadow-soft sm:ml-auto sm:max-w-[360px] sm:justify-end"
+        className="ml-0 flex max-w-full flex-wrap items-center gap-1 py-0.5 sm:ml-auto sm:justify-end"
         aria-label={bundled ? t("lbl_builtin_of") : t("lbl_agent_switches")}
         title={bundled ? t("lbl_builtin_of") : t("lbl_agent_switches")}
       >
