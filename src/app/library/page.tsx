@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import cn from "classnames";
-import { useSkills, useAgents, fetcher, apiPost } from "@/lib/client";
+import { useSkills, useAgents, useTrash, fetcher, apiPost } from "@/lib/client";
 import { useLang } from "@/components/LangProvider";
 import { useToast } from "@/components/Toast";
-import { SkillListRow } from "@/components/SkillListRow";
+import { SkillListRow, type UpdateHint } from "@/components/SkillListRow";
+import { TrashPanel } from "@/components/TrashPanel";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DedupPanel } from "@/components/DedupPanel";
 import { Button, EmptyState, ErrorState, Spinner } from "@/components/ui";
@@ -14,13 +15,14 @@ import type { DetectedAgent, SkillRow } from "@/lib/types";
 
 type Status = "all" | "active" | "idle";
 type Layout = "top" | "side";
-type Zone = "mine" | "builtin";
+type Zone = "mine" | "builtin" | "trash";
 const UNCAT = "__uncat__";
 
 export default function LibraryPage() {
   const { t } = useLang();
   const { data: skills, error, isLoading, mutate } = useSkills();
   const { data: agents } = useAgents();
+  const { data: trash, mutate: mutateTrash } = useTrash();
   const [status, setStatus] = useState<Status>("all");
   const [q, setQ] = useState("");
   const [category, setCategory] = useState<string>("all"); // "all" | UNCAT | tag
@@ -29,7 +31,7 @@ export default function LibraryPage() {
   const [openSuites, setOpenSuites] = useState<Set<string>>(new Set());
   const toast = useToast();
   const [checking, setChecking] = useState(false);
-  const [updates, setUpdates] = useState<Map<string, { hasUpdate: boolean; source: string | null }> | null>(null);
+  const [updates, setUpdates] = useState<Map<string, UpdateHint> | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkConfirm, setBulkConfirm] = useState(false);
 
@@ -37,12 +39,22 @@ export default function LibraryPage() {
     setChecking(true);
     try {
       const list = await fetcher<
-        { hash: string; hasUpdate: boolean; source: string | null }[]
+        ({ hash: string } & UpdateHint)[]
       >("/api/skills/updates");
       const map = new Map(list.map((u) => [u.hash, u]));
       setUpdates(map);
-      const n = list.filter((u) => u.hasUpdate).length;
-      toast(n > 0 ? `${n} ${t("upd_found_n")}` : t("upd_none"), n > 0 ? "success" : "success");
+      const counts = {
+        update: list.filter((u) => u.status === "update").length,
+        current: list.filter((u) => u.status === "current").length,
+        noSource: list.filter((u) => u.status === "no-source").length,
+        error: list.filter((u) => u.status === "error").length,
+      };
+      const summary = t("upd_summary")
+        .replace("{u}", String(counts.update))
+        .replace("{c}", String(counts.current))
+        .replace("{n}", String(counts.noSource))
+        .replace("{e}", String(counts.error));
+      toast(summary, counts.error ? "error" : "success");
     } catch (e) {
       toast((e as Error).message, "error");
     } finally {
@@ -71,12 +83,21 @@ export default function LibraryPage() {
   );
   const builtinCount = importedAll.length - mineCount;
   const imported = useMemo(
-    () =>
-      importedAll.filter((r) =>
+    () => {
+      if (zone === "trash") return [];
+      return importedAll.filter((r) =>
         zone === "builtin" ? r.provenance === "bundled" : r.provenance !== "bundled"
-      ),
+      );
+    },
     [importedAll, zone]
   );
+
+  function handleChanged() {
+    // Any mutation can invalidate a hash-keyed update result. Source linking is
+    // the important case: the old "no source" badge must disappear immediately.
+    setUpdates(null);
+    void Promise.all([mutate(), mutateTrash()]);
+  }
 
   // Bulk one-click targets. Both count the current zone only; the builtin
   // zone never has local edits or updates, so the buttons vanish there.
@@ -233,7 +254,7 @@ export default function LibraryPage() {
             open={filtersActive || openSuites.has(source)}
             lockedOpen={filtersActive}
             onToggleOpen={() => toggleSuiteOpen(source)}
-            onChanged={() => mutate()}
+            onChanged={handleChanged}
             updates={updates}
           />
         ))}
@@ -249,7 +270,7 @@ export default function LibraryPage() {
               key={skill.contentHash}
               skill={skill}
               agents={agents ?? []}
-              onChanged={() => mutate()}
+              onChanged={handleChanged}
               update={updates?.get(skill.contentHash)}
             />
           ))}
@@ -259,11 +280,13 @@ export default function LibraryPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-col items-start gap-3 xl:flex-row xl:items-center xl:justify-between">
         <h1 className="text-2xl font-extrabold text-ink-header">
           📚 {t("nav_library")}
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
+          {zone !== "trash" && (
+            <>
           {/* Layout toggle: B (top pills) vs C (side rail) */}
           <div className="flex rounded-pill border-2 border-line/40 bg-content p-0.5">
             {(["top", "side"] as const).map((l) => (
@@ -313,7 +336,9 @@ export default function LibraryPage() {
           <Button variant="default" disabled={checking} onClick={checkUpdates}>
             {checking ? t("upd_checking") : `⬆ ${t("upd_check")}`}
           </Button>
-          <Button variant="default" onClick={() => mutate()}>
+            </>
+          )}
+          <Button variant="default" onClick={handleChanged}>
             🔄 {t("act_refresh")}
           </Button>
         </div>
@@ -324,6 +349,7 @@ export default function LibraryPage() {
         {([
           { key: "mine", label: t("zone_mine"), n: mineCount },
           { key: "builtin", label: t("builtin_tab"), n: builtinCount },
+          { key: "trash", label: t("zone_trash"), n: trash?.length ?? 0 },
         ] as const).map((z) => (
           <button
             key={z.key}
@@ -350,9 +376,19 @@ export default function LibraryPage() {
       )}
 
       {zone === "mine" && (
-        <DedupPanel agents={agents ?? []} onChanged={() => mutate()} />
+        <DedupPanel agents={agents ?? []} onChanged={handleChanged} />
       )}
 
+      {zone === "trash" && (
+        <TrashPanel
+          items={trash ?? []}
+          agents={agents ?? []}
+          onChanged={handleChanged}
+        />
+      )}
+
+      {zone !== "trash" && (
+        <>
       {/* Toolbar: status (secondary) + search */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         {zone === "builtin" ? (
@@ -400,8 +436,8 @@ export default function LibraryPage() {
 
       {/* C: side tag rail (secondary in-content panel, not a second nav) */}
       {layout === "side" ? (
-        <div className="flex gap-6">
-          <aside className="w-44 shrink-0">
+        <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
+          <aside className="w-full shrink-0 sm:w-44">
             <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wide text-ink-secondary">
               🏷️ {t("lbl_tags")}
             </div>
@@ -433,6 +469,8 @@ export default function LibraryPage() {
         </div>
       ) : (
         grid
+      )}
+        </>
       )}
 
       {bulkConfirm && (
@@ -477,7 +515,7 @@ function LibrarySuite({
   lockedOpen: boolean;
   onToggleOpen: () => void;
   onChanged: () => void;
-  updates: Map<string, { hasUpdate: boolean; source: string | null }> | null;
+  updates: Map<string, UpdateHint> | null;
 }) {
   const { t } = useLang();
   const nActive = rows.filter((r) => !r.parked).length;

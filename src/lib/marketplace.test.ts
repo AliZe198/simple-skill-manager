@@ -7,6 +7,7 @@ import {
   resolveSource,
   dirMatchesSkill,
   assertSafeCloneUrl,
+  sourceSkillDir,
 } from "./marketplace";
 
 function tmp(): string {
@@ -112,6 +113,26 @@ describe("dirMatchesSkill (updateSkill clobber guard)", () => {
     const root = tmp();
     fs.mkdirSync(path.join(root, "sub"), { recursive: true });
     expect(dirMatchesSkill(root, "anything")).toBe(false);
+  });
+});
+
+describe("sourceSkillDir (provider-specific update path)", () => {
+  it("uses the exact recorded provider directory in a multi-agent repo", () => {
+    const root = tmp();
+    const codex = path.join(root, ".agents/skills/impeccable");
+    const opencode = path.join(root, ".opencode/skills/impeccable");
+    mk(codex);
+    mk(opencode);
+    expect(
+      sourceSkillDir(root, "impeccable", ".opencode/skills/impeccable")
+    ).toBe(opencode);
+  });
+
+  it("rejects a recorded source directory that escapes the repo", () => {
+    const root = tmp();
+    expect(() => sourceSkillDir(root, "impeccable", "../outside")).toThrow(
+      /inside/
+    );
   });
 });
 

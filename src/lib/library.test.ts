@@ -139,6 +139,49 @@ describe("新建技能 (new) + 删除 (delete)", () => {
   });
 });
 
+describe("回收站 (recoverable delete)", () => {
+  it("moves files out of agents and restores the previous agent assignments", async () => {
+    const {
+      buildOverview,
+      adopt,
+      trashSkill,
+      listTrashedSkills,
+      restoreTrashedSkill,
+    } = await lib();
+    const grouped = buildOverview().map((r) => ({ name: r.name, hash: r.contentHash }));
+    const row = adopt(hashOf("better-auth", grouped));
+    const previousAgents = [...row.activeAgentIds].sort();
+    const central = row.centralPath!;
+
+    trashSkill(row.contentHash);
+    expect(fs.existsSync(central)).toBe(false);
+    expect(listTrashedSkills()).toHaveLength(1);
+    expect(
+      buildOverview().find((r) => r.contentHash === row.contentHash)?.adopted ?? false
+    ).toBe(false);
+
+    const restored = restoreTrashedSkill(row.contentHash);
+    expect(restored.failedAgentIds).toEqual([]);
+    expect(restored.skill.activeAgentIds.sort()).toEqual(previousAgents);
+    expect(fs.existsSync(restored.skill.centralPath!)).toBe(true);
+    expect(listTrashedSkills()).toHaveLength(0);
+  });
+
+  it("permanently deletes only after the skill is in Trash", async () => {
+    const { buildOverview, adopt, trashSkill, listTrashedSkills, purgeTrashedSkill } =
+      await lib();
+    const grouped = buildOverview().map((r) => ({ name: r.name, hash: r.contentHash }));
+    const row = adopt(hashOf("impeccable", grouped));
+    trashSkill(row.contentHash);
+    const trashRoot = path.join(process.env.SSM_DATA_DIR!, "trash");
+    expect(fs.readdirSync(trashRoot).length).toBe(1);
+
+    purgeTrashedSkill(row.contentHash);
+    expect(listTrashedSkills()).toHaveLength(0);
+    expect(fs.readdirSync(trashRoot)).toEqual([]);
+  });
+});
+
 describe("setAgentLinkMode re-materializes existing targets", () => {
   it("switching symlink→copy rewrites the live target", async () => {
     const { buildOverview, adopt, createTarget, setAgentLinkMode } = await lib();

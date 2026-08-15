@@ -48,6 +48,43 @@ describe("parseRepo", () => {
   });
 });
 
+describe("snapshotLibrary", () => {
+  it("can snapshot one skill without capturing another skill's local edits", async () => {
+    const fixture = buildFixtureTree();
+    process.env.SSM_AGENT_ROOT = fixture.root;
+    process.env.SSM_DATA_DIR = fixture.dataDir;
+    const lib = path.join(fixture.dataDir, "library");
+    const one = path.join(lib, "one");
+    const two = path.join(lib, "two");
+    fs.mkdirSync(one, { recursive: true });
+    fs.mkdirSync(two, { recursive: true });
+    fs.writeFileSync(path.join(one, "SKILL.md"), "one v1\n");
+    fs.writeFileSync(path.join(two, "SKILL.md"), "two v1\n");
+
+    const { snapshotLibrary } = await import("./sync");
+    snapshotLibrary("initial");
+    fs.writeFileSync(path.join(one, "SKILL.md"), "one v2\n");
+    fs.writeFileSync(path.join(two, "SKILL.md"), "two v2\n");
+
+    snapshotLibrary("one only", [one]);
+
+    const committed = execFileSync(
+      "git",
+      ["show", "--name-only", "--format=", "HEAD"],
+      { cwd: lib, encoding: "utf8" }
+    )
+      .trim()
+      .split("\n");
+    expect(committed).toEqual(["one/SKILL.md"]);
+    expect(
+      execFileSync("git", ["status", "--short"], {
+        cwd: lib,
+        encoding: "utf8",
+      })
+    ).toContain("two/SKILL.md");
+  });
+});
+
 describe("connectToRemote (existing-repo flows)", () => {
   it("clone: local empty + remote has commits", async () => {
     const bare = initBare();

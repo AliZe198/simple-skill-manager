@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import type { DetectedAgent, SkillRow, McpServer, McpFormat } from "./types";
+import type { DetectedAgent, SkillRow, TrashedSkill, McpServer, McpFormat } from "./types";
 
 interface Envelope<T> {
   ok: boolean;
@@ -58,6 +58,10 @@ export function useSkills() {
 
 export function useAgents() {
   return useSWR<DetectedAgent[]>("/api/agents", fetcher, swrOpts);
+}
+
+export function useTrash() {
+  return useSWR<TrashedSkill[]>("/api/skills/trash", fetcher, swrOpts);
 }
 
 export interface McpEntry {

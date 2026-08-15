@@ -74,6 +74,8 @@ export interface SkillRow {
   centralPath: string | null;
   provenance: Provenance;
   gitUrl?: string;
+  /** Exact directory inside gitUrl that owns this provider-specific skill. */
+  sourceSubdir?: string;
   /**
    * Install-source repo slug (owner/repo) from the `skills` CLI lock file,
    * when known. Skills sharing a source form a 套件 (suite) in the UI.
@@ -94,6 +96,20 @@ export interface SkillRow {
    * not, which is what this flag surfaces. Only meaningful for adopted skills.
    */
   localChanged?: boolean;
+}
+
+/** A recoverable deletion kept outside the live library. */
+export interface TrashedSkill {
+  contentHash: string;
+  name: string;
+  description: string;
+  provenance: Provenance;
+  gitUrl?: string;
+  sourceSubdir?: string;
+  tags: string[];
+  deletedAt: number;
+  previousAgentIds: string[];
+  fileExists: boolean;
 }
 
 export interface SkillTarget {

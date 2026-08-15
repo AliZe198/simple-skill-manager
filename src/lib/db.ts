@@ -40,7 +40,7 @@ export function db(): Database.Database {
  * whenever the schema changes, so an existing user's ssm.db is upgraded in place
  * instead of breaking on the next query. Never renumber past steps.
  */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 // Each step's index+1 is its target version; step i runs when user_version < i+1.
 const MIGRATIONS: Array<(d: Database.Database) => void> = [
@@ -79,8 +79,29 @@ const MIGRATIONS: Array<(d: Database.Database) => void> = [
       );
     `);
   },
-  // v2+ — add new migration steps here, e.g.
-  // (d) => d.exec("ALTER TABLE skills ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;"),
+  // v2 — provider-specific update locations + recoverable skill trash.
+  (d) => {
+    const columns = d.prepare("PRAGMA table_info(skills)").all() as { name: string }[];
+    if (!columns.some((c) => c.name === "source_subdir")) {
+      d.exec("ALTER TABLE skills ADD COLUMN source_subdir TEXT");
+    }
+    d.exec(`
+      CREATE TABLE IF NOT EXISTS trashed_skills (
+        content_hash     TEXT PRIMARY KEY,
+        name             TEXT NOT NULL,
+        description      TEXT NOT NULL DEFAULT '',
+        provenance       TEXT NOT NULL DEFAULT 'unknown',
+        git_url          TEXT,
+        source_subdir    TEXT,
+        tags             TEXT NOT NULL DEFAULT '[]',
+        favorited        INTEGER NOT NULL DEFAULT 0,
+        trash_path       TEXT NOT NULL,
+        original_dir     TEXT NOT NULL,
+        target_agent_ids TEXT NOT NULL DEFAULT '[]',
+        deleted_at       INTEGER NOT NULL
+      );
+    `);
+  },
 ];
 
 function migrate(d: Database.Database): void {
@@ -104,11 +125,27 @@ export interface SkillRecord {
   central_path: string | null;
   provenance: Provenance;
   git_url: string | null;
+  source_subdir: string | null;
   enabled: number;
   tags: string;
   favorited: number;
   created_at: number;
   updated_at: number;
+}
+
+export interface TrashedSkillRecord {
+  content_hash: string;
+  name: string;
+  description: string;
+  provenance: Provenance;
+  git_url: string | null;
+  source_subdir: string | null;
+  tags: string;
+  favorited: number;
+  trash_path: string;
+  original_dir: string;
+  target_agent_ids: string;
+  deleted_at: number;
 }
 
 export interface TargetRecord {
@@ -138,6 +175,7 @@ export function upsertSkill(rec: {
   centralPath?: string | null;
   provenance?: Provenance;
   gitUrl?: string | null;
+  sourceSubdir?: string | null;
   enabled?: boolean;
   favorited?: boolean;
   tags?: string[];
@@ -152,6 +190,7 @@ export function upsertSkill(rec: {
            central_path = COALESCE(?, central_path),
            provenance = COALESCE(?, provenance),
            git_url = COALESCE(?, git_url),
+           source_subdir = COALESCE(?, source_subdir),
            enabled = COALESCE(?, enabled),
            favorited = COALESCE(?, favorited),
            tags = COALESCE(?, tags),
@@ -164,6 +203,7 @@ export function upsertSkill(rec: {
         rec.centralPath ?? null,
         rec.provenance ?? null,
         rec.gitUrl ?? null,
+        rec.sourceSubdir ?? null,
         rec.enabled === undefined ? null : rec.enabled ? 1 : 0,
         rec.favorited === undefined ? null : rec.favorited ? 1 : 0,
         rec.tags ? JSON.stringify(rec.tags) : null,
@@ -175,8 +215,8 @@ export function upsertSkill(rec: {
       .prepare(
         `INSERT INTO skills
            (content_hash, name, description, central_path, provenance,
-            git_url, enabled, tags, favorited, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            git_url, source_subdir, enabled, tags, favorited, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         rec.contentHash,
@@ -185,6 +225,7 @@ export function upsertSkill(rec: {
         rec.centralPath ?? null,
         rec.provenance ?? "unknown",
         rec.gitUrl ?? null,
+        rec.sourceSubdir ?? null,
         rec.enabled === false ? 0 : 1,
         rec.tags ? JSON.stringify(rec.tags) : "[]",
         rec.favorited ? 1 : 0,
@@ -203,6 +244,8 @@ export function setSkillFields(
     centralPath: string | null;
     description: string;
     name: string;
+    gitUrl: string | null;
+    sourceSubdir: string | null;
   }>
 ): void {
   const sets: string[] = [];
@@ -230,6 +273,14 @@ export function setSkillFields(
   if (fields.name !== undefined) {
     sets.push("name = ?");
     vals.push(fields.name);
+  }
+  if (fields.gitUrl !== undefined) {
+    sets.push("git_url = ?");
+    vals.push(fields.gitUrl);
+  }
+  if (fields.sourceSubdir !== undefined) {
+    sets.push("source_subdir = ?");
+    vals.push(fields.sourceSubdir);
   }
   if (!sets.length) return;
   sets.push("updated_at = ?");
@@ -259,8 +310,8 @@ export function rekeySkill(oldHash: string, newHash: string): void {
     d.prepare(
       `INSERT OR REPLACE INTO skills
          (content_hash, name, description, central_path, provenance,
-          git_url, enabled, tags, favorited, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          git_url, source_subdir, enabled, tags, favorited, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       newHash,
       old.name,
@@ -268,6 +319,7 @@ export function rekeySkill(oldHash: string, newHash: string): void {
       old.central_path,
       old.provenance,
       old.git_url,
+      old.source_subdir,
       old.enabled,
       old.tags,
       old.favorited,
@@ -281,6 +333,46 @@ export function rekeySkill(oldHash: string, newHash: string): void {
     ).run(newHash, newHash, oldHash);
     d.prepare("DELETE FROM skills WHERE content_hash = ?").run(oldHash);
   })();
+}
+
+export function putTrashedSkill(rec: TrashedSkillRecord): void {
+  db()
+    .prepare(
+      `INSERT OR REPLACE INTO trashed_skills
+         (content_hash, name, description, provenance, git_url, source_subdir,
+          tags, favorited, trash_path, original_dir, target_agent_ids, deleted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      rec.content_hash,
+      rec.name,
+      rec.description,
+      rec.provenance,
+      rec.git_url,
+      rec.source_subdir,
+      rec.tags,
+      rec.favorited,
+      rec.trash_path,
+      rec.original_dir,
+      rec.target_agent_ids,
+      rec.deleted_at
+    );
+}
+
+export function getTrashedSkill(hash: string): TrashedSkillRecord | undefined {
+  return db()
+    .prepare("SELECT * FROM trashed_skills WHERE content_hash = ?")
+    .get(hash) as TrashedSkillRecord | undefined;
+}
+
+export function allTrashedSkills(): TrashedSkillRecord[] {
+  return db()
+    .prepare("SELECT * FROM trashed_skills ORDER BY deleted_at DESC")
+    .all() as TrashedSkillRecord[];
+}
+
+export function deleteTrashedSkill(hash: string): void {
+  db().prepare("DELETE FROM trashed_skills WHERE content_hash = ?").run(hash);
 }
 
 export function targetsFor(hash: string): TargetRecord[] {

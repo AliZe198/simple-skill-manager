@@ -16,6 +16,8 @@ import { SkillDetailModal } from "./SkillDetailModal";
 export interface UpdateHint {
   hasUpdate: boolean;
   source: string | null;
+  status: "update" | "current" | "no-source" | "error";
+  error?: string;
 }
 
 /** Compact row for an imported skill in My Library. */
@@ -33,13 +35,16 @@ export function SkillListRow({
   const { t } = useLang();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<null | "remove" | "delete" | "update">(
+  const [confirm, setConfirm] = useState<null | "remove" | "trash" | "update">(
     null
   );
   const [showDetail, setShowDetail] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameVal, setRenameVal] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceSubdir, setSourceSubdir] = useState("");
 
   const detected = agents.filter((a) => a.detected && !a.ignored);
   const activeSet = new Set(skill.activeAgentIds);
@@ -72,6 +77,32 @@ export function SkillListRow({
     run({ action: "rename", hash: skill.contentHash, name }, t("rename_done"));
   }
 
+  function openSource() {
+    setSourceUrl(skill.gitUrl ?? "");
+    setSourceSubdir(skill.sourceSubdir ?? "");
+    setSourceOpen(true);
+  }
+
+  async function submitSource() {
+    if (!sourceUrl.trim()) return;
+    setBusy(true);
+    try {
+      await apiPost("/api/skills/action", {
+        action: "linkSource",
+        hash: skill.contentHash,
+        gitUrl: sourceUrl.trim(),
+        sourceSubdir: sourceSubdir.trim(),
+      });
+      setSourceOpen(false);
+      toast(t("source_linked"), "success");
+      onChanged();
+    } catch (e) {
+      toast((e as Error).message || t("toast_error"), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const onRowClick = (e: MouseEvent) => {
     if ((e.target as HTMLElement).closest("button, input, a, label, [role='menuitem']"))
       return;
@@ -82,12 +113,12 @@ export function SkillListRow({
     <div
       onClick={onRowClick}
       className={cn(
-        "group relative flex min-h-[52px] cursor-pointer items-center gap-3 rounded-bubble border-2 bg-content/60 px-3 py-2 transition-colors hover:border-line/60 hover:bg-content",
+        "group relative flex min-h-[52px] cursor-pointer flex-wrap items-center gap-3 rounded-bubble border-2 bg-content/60 px-3 py-2 transition-colors hover:border-line/60 hover:bg-content sm:flex-nowrap",
         bundled ? "border-l-4 border-l-amber-400" : "border-l-4 border-l-mint"
       )}
     >
       {/* Main info */}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <div className="flex min-w-0 w-full flex-col gap-0.5 sm:w-auto sm:flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <button
             onClick={() => setShowDetail(true)}
@@ -130,6 +161,24 @@ export function SkillListRow({
               ⬆ {t("upd_available")}
             </button>
           )}
+          {update?.status === "no-source" && !bundled && (
+            <button
+              onClick={openSource}
+              className="badge shrink-0 bg-stone-100 text-ink-muted transition-colors hover:bg-stone-200"
+              title={t("source_link")}
+            >
+              {t("upd_no_source")}
+            </button>
+          )}
+          {update?.status === "error" && !bundled && (
+            <button
+              onClick={openSource}
+              className="badge shrink-0 bg-red-50 text-status-error-active transition-colors hover:bg-red-100"
+              title={update.error ?? t("upd_check_error")}
+            >
+              {t("upd_check_error")}
+            </button>
+          )}
           {!bundled && skill.localChanged && (
             <button
               disabled={busy}
@@ -155,7 +204,7 @@ export function SkillListRow({
       {!bundled && <CompactTagBar hash={skill.contentHash} tags={skill.tags} onChanged={onChanged} />}
 
       {/* Agent toggles / belongs-to */}
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="ml-auto flex max-w-full shrink items-center gap-1.5 overflow-x-auto">
         {bundled ? (
           (builtInAgentIds.length ? builtInAgentIds : skill.occurrences.map((o) => o.agentId))
             .filter((v, i, a) => a.indexOf(v) === i)
@@ -251,6 +300,14 @@ export function SkillListRow({
                 >
                   ✏️ {t("act_rename")}
                 </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    setMenuOpen(false);
+                    openSource();
+                  }}
+                >
+                  {t("source_link")}
+                </MenuItem>
                 {skill.localChanged && (
                   <MenuItem
                     onClick={() => {
@@ -294,10 +351,10 @@ export function SkillListRow({
                   danger
                   onClick={() => {
                     setMenuOpen(false);
-                    setConfirm("delete");
+                    setConfirm("trash");
                   }}
                 >
-                  {t("act_delete_perm")}
+                  {t("act_move_trash")}
                 </MenuItem>
               </>
             )}
@@ -338,6 +395,50 @@ export function SkillListRow({
         </Modal>
       )}
 
+      {sourceOpen && (
+        <Modal title={t("source_title")} onClose={() => setSourceOpen(false)}>
+          <div className="flex flex-col gap-4">
+            <label className="flex flex-col gap-1.5 text-sm font-bold text-ink-body">
+              {t("source_repo_label")}
+              <input
+                className="input w-full font-mono text-sm"
+                autoFocus
+                value={sourceUrl}
+                placeholder={t("source_repo_ph")}
+                onChange={(e) => setSourceUrl(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm font-bold text-ink-body">
+              {t("source_subdir_label")}
+              <input
+                className="input w-full font-mono text-sm"
+                value={sourceSubdir}
+                placeholder={t("source_subdir_ph")}
+                onChange={(e) => setSourceSubdir(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submitSource();
+                }}
+              />
+            </label>
+            <p className="text-xs leading-relaxed text-ink-muted">
+              {t("source_subdir_hint")}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setSourceOpen(false)}>
+                {t("act_cancel")}
+              </Button>
+              <Button
+                variant="primary"
+                disabled={busy || !sourceUrl.trim()}
+                onClick={submitSource}
+              >
+                {busy ? t("upd_checking") : t("act_confirm")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {confirm === "remove" && (
         <ConfirmDialog
           title={`${t("confirm_remove_title")} · ${skill.name}`}
@@ -370,15 +471,15 @@ export function SkillListRow({
           }}
         />
       )}
-      {confirm === "delete" && (
+      {confirm === "trash" && (
         <ConfirmDialog
-          title={`${t("confirm_delete_title")} · ${skill.name}`}
-          body={t("confirm_delete_body")}
-          confirmLabel={t("act_delete_perm")}
+          title={`${t("confirm_trash_title")} · ${skill.name}`}
+          body={t("confirm_trash_body")}
+          confirmLabel={t("act_move_trash")}
           onCancel={() => setConfirm(null)}
           onConfirm={() => {
             setConfirm(null);
-            run({ action: "delete", hash: skill.contentHash }, t("act_delete_perm"));
+            run({ action: "trash", hash: skill.contentHash }, t("trash_moved"));
           }}
         />
       )}
@@ -386,6 +487,14 @@ export function SkillListRow({
         <SkillDetailModal
           hash={skill.contentHash}
           skill={skill}
+          onTrash={
+            !bundled
+              ? () => {
+                  setShowDetail(false);
+                  setConfirm("trash");
+                }
+              : undefined
+          }
           onClose={() => setShowDetail(false)}
         />
       )}

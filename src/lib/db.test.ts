@@ -19,13 +19,19 @@ afterEach(() => {
 describe("schema versioning", () => {
   it("stamps user_version on a fresh DB and creates the tables", () => {
     const d = db();
-    expect(d.pragma("user_version", { simple: true })).toBeGreaterThanOrEqual(1);
+    expect(d.pragma("user_version", { simple: true })).toBeGreaterThanOrEqual(2);
     const tables = (
       d.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
         name: string;
       }[]
     ).map((r) => r.name);
-    expect(tables).toEqual(expect.arrayContaining(["skills", "targets", "favorites"]));
+    expect(tables).toEqual(
+      expect.arrayContaining(["skills", "targets", "favorites", "trashed_skills"])
+    );
+    const columns = (
+      d.prepare("PRAGMA table_info(skills)").all() as { name: string }[]
+    ).map((c) => c.name);
+    expect(columns).toContain("source_subdir");
   });
 
   it("upgrades a pre-versioning DB (user_version 0, tables already present) without data loss", () => {
@@ -54,7 +60,7 @@ describe("schema versioning", () => {
     raw.close();
 
     const d = db();
-    expect(d.pragma("user_version", { simple: true })).toBeGreaterThanOrEqual(1);
+    expect(d.pragma("user_version", { simple: true })).toBeGreaterThanOrEqual(2);
     const row = d.prepare("SELECT name FROM skills WHERE content_hash = ?").get("abc") as
       | { name: string }
       | undefined;

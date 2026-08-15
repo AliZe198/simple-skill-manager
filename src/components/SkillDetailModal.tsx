@@ -7,7 +7,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { fetcher, swrOpts } from "@/lib/client";
 import { Modal } from "./Modal";
-import { Spinner, ProvenanceBadge } from "./ui";
+import { Button, Spinner, ProvenanceBadge } from "./ui";
 import { useLang } from "./LangProvider";
 import { useToast } from "./Toast";
 import type { Provenance, SkillRow } from "@/lib/types";
@@ -43,10 +43,12 @@ type View = "rendered" | "raw";
 export function SkillDetailModal({
   hash,
   skill,
+  onTrash,
   onClose,
 }: {
   hash: string;
   skill?: SkillRow;
+  onTrash?: () => void;
   onClose: () => void;
 }) {
   const { t } = useLang();
@@ -214,6 +216,12 @@ export function SkillDetailModal({
                   ))}
                 </ul>
               </MetaBlock>
+            )}
+
+            {onTrash && (
+              <Button variant="danger" className="mt-auto" onClick={onTrash}>
+                {t("act_move_trash")}
+              </Button>
             )}
           </aside>
         </div>

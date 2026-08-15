@@ -385,6 +385,7 @@ interface ManifestEntry {
   description: string;
   provenance: Provenance;
   gitUrl?: string;
+  sourceSubdir?: string;
   tags: string[];
   /** Legacy (pre-cleanup manifests carry it); ignored on import. */
   favorited?: boolean;
@@ -399,6 +400,7 @@ function writeManifest(): void {
     description: s.description,
     provenance: s.provenance,
     gitUrl: s.git_url ?? undefined,
+    sourceSubdir: s.source_subdir ?? undefined,
     tags: safeTags(s.tags),
   }));
   fs.writeFileSync(
@@ -440,6 +442,7 @@ export function importManifest(): { imported: number; mismatches: string[] } {
       centralPath: dir,
       provenance: e.provenance,
       gitUrl: e.gitUrl ?? null,
+      sourceSubdir: e.sourceSubdir ?? null,
       tags: e.tags,
     });
     imported++;
@@ -513,15 +516,40 @@ function ensureInitialCommit(branch = "main"): void {
  * Strictly best-effort: it must never throw, so callers can wrap a destructive
  * operation without any risk of the snapshot itself blocking or failing it.
  */
-export function snapshotLibrary(label: string): void {
+export function snapshotLibrary(label: string, paths?: string[]): void {
   try {
     if (!isGitRepo()) {
       git(["init", "-b", "main"]);
       ensureRepoFiles(); // .gitignore guard + manifest, before the first add -A
     }
-    git(["add", "-A"]);
-    const staged = git(["diff", "--cached", "--name-only"], { allowFail: true });
-    if (staged) git(["commit", "-m", `Snapshot: ${label}`], { allowFail: true });
+    const root = path.resolve(libraryDir());
+    const pathspecs = paths
+      ? [
+          ...new Set(
+            paths
+              .map((candidate) => path.resolve(candidate))
+              .filter((candidate) => isInsideRoot(root, candidate))
+              .map((candidate) => path.relative(root, candidate))
+              .filter((candidate) => candidate && candidate !== ".")
+          ),
+        ]
+      : [];
+    // A scoped snapshot must never silently widen into `git add -A`: doing so
+    // would capture unrelated edits from a different skill.
+    if (paths && pathspecs.length === 0) return;
+    const scope = paths ? ["--", ...pathspecs] : [];
+    git(["add", "-A", ...scope]);
+    const staged = git(
+      ["diff", "--cached", "--name-only", ...scope],
+      { allowFail: true }
+    );
+    if (staged) {
+      // Supplying the same pathspec to commit also protects against unrelated
+      // changes the user may already have staged in the library repository.
+      git(["commit", "-m", `Snapshot: ${label}`, ...scope], {
+        allowFail: true,
+      });
+    }
   } catch {
     /* insurance only — never block the caller */
   }

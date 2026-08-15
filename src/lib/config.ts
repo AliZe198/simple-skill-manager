@@ -33,6 +33,11 @@ export function libraryDir(): string {
   return path.join(dataDir(), "library");
 }
 
+/** Recoverable skill deletions live outside the synced library repository. */
+export function trashDir(): string {
+  return path.join(dataDir(), "trash");
+}
+
 export function dbPath(): string {
   return path.join(dataDir(), "ssm.db");
 }

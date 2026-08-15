@@ -8,6 +8,7 @@ import { hashDir } from "./hash";
 import { readSkillMeta } from "./skillmeta";
 import {
   upsertSkill,
+  setSkillFields,
   listFavorites,
   allSkills,
   getSkill,
@@ -343,6 +344,7 @@ function adoptDirIntoLibrary(
     nameHint?: string;
     descHint?: string;
     gitUrl?: string;
+    sourceSubdir?: string;
     provenance?: Provenance;
     agentIds?: string[];
   }
@@ -364,6 +366,7 @@ function adoptDirIntoLibrary(
     centralPath: dest,
     provenance: opts.provenance ?? "downloaded",
     gitUrl: opts.gitUrl,
+    sourceSubdir: opts.sourceSubdir,
     enabled: true,
   });
   for (const agentId of opts.agentIds ?? []) createTarget(hash, agentId);
@@ -492,6 +495,7 @@ export function installFromMarket(
       nameHint: market.name,
       descHint: market.description,
       gitUrl: market.gitUrl,
+      sourceSubdir: path.relative(tmpRoot, skillDir).split(path.sep).join("/"),
       agentIds,
     });
   });
@@ -705,6 +709,41 @@ export function resolveSource(gitUrl: string | null): SkillSource | null {
   return null;
 }
 
+function normalizeSourceSubdir(value: string | null | undefined): string {
+  return (value ?? "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "")
+    .replace(/\/+$/, "");
+}
+
+/** Resolve an explicitly recorded provider path, or use legacy name lookup. */
+export function sourceSkillDir(
+  cloneRoot: string,
+  slug: string,
+  sourceSubdir: string | null | undefined
+): string {
+  const subdir = normalizeSourceSubdir(sourceSubdir);
+  let dir: string;
+  if (subdir) {
+    dir = path.resolve(cloneRoot, subdir);
+    const rel = path.relative(path.resolve(cloneRoot), dir);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      throw new Error("The source folder must stay inside its GitHub repository.");
+    }
+  } else {
+    dir = findSkillDir(cloneRoot, slug);
+  }
+  if (!dirMatchesSkill(dir, slug)) {
+    throw new Error(
+      subdir
+        ? `The recorded source folder (${subdir}) is missing or belongs to a different skill.`
+        : "Couldn't locate this skill's folder in its source repo (it may have been renamed)."
+    );
+  }
+  return dir;
+}
+
 export type UpdateStatus = "update" | "current" | "no-source" | "error";
 
 export interface UpdateInfo {
@@ -725,7 +764,10 @@ export async function checkAllUpdates(): Promise<UpdateInfo[]> {
   // Resolve sources, then group by repo so each repo is cloned only once.
   const byRepo = new Map<
     string,
-    { gitUrl: string; items: { hash: string; name: string; slug: string }[] }
+    {
+      gitUrl: string;
+      items: { hash: string; name: string; slug: string; sourceSubdir: string | null }[];
+    }
   >();
   for (const s of skills) {
     const src = resolveSource(s.git_url);
@@ -740,7 +782,12 @@ export async function checkAllUpdates(): Promise<UpdateInfo[]> {
       continue;
     }
     const g = byRepo.get(src.repoFull) ?? { gitUrl: src.gitUrl, items: [] };
-    g.items.push({ hash: s.content_hash, name: s.name, slug: slugOf(s.name) });
+    g.items.push({
+      hash: s.content_hash,
+      name: s.name,
+      slug: slugOf(s.name),
+      sourceSubdir: s.source_subdir,
+    });
     byRepo.set(src.repoFull, g);
   }
   for (const [repoFull, g] of byRepo) {
@@ -752,19 +799,7 @@ export async function checkAllUpdates(): Promise<UpdateInfo[]> {
             // SOMETHING (a sibling skill, or the clone root), and hashing the
             // wrong dir manufactures a permanent false "有更新" badge that the
             // guarded update then refuses to apply. Not located ⇒ say so.
-            const dir = findSkillDir(tmp, it.slug);
-            if (!dirMatchesSkill(dir, it.slug)) {
-              out.push({
-                hash: it.hash,
-                name: it.name,
-                source: repoFull,
-                hasUpdate: false,
-                status: "error",
-                error:
-                  "Couldn't locate this skill's folder in its source repo (it may have been renamed); versions were not compared.",
-              });
-              continue;
-            }
+            const dir = sourceSkillDir(tmp, it.slug, it.sourceSubdir);
             const upstreamHash = hashDir(dir);
             const hasUpdate = upstreamHash !== it.hash;
             out.push({
@@ -801,6 +836,29 @@ export async function checkAllUpdates(): Promise<UpdateInfo[]> {
   return out;
 }
 
+/** Verify and persist a source repo + exact provider folder for future updates. */
+export async function linkSkillSource(
+  hash: string,
+  gitUrl: string,
+  sourceSubdir = ""
+): Promise<{ source: string; sourceSubdir: string; hasUpdate: boolean }> {
+  const rec = getSkill(hash);
+  if (!rec?.central_path) throw new Error("The skill is not in the library.");
+  assertSafeCloneUrl(gitUrl);
+  const src = resolveSource(gitUrl);
+  if (!src) throw new Error("Enter a GitHub repository URL.");
+  const normalized = normalizeSourceSubdir(sourceSubdir);
+  return withClone(src.gitUrl, (tmp) => {
+    const dir = sourceSkillDir(tmp, slugOf(rec.name), normalized);
+    const hasUpdate = hashDir(dir) !== hashDir(rec.central_path as string);
+    setSkillFields(hash, {
+      gitUrl: src.gitUrl.replace(/\.git$/i, ""),
+      sourceSubdir: normalized || null,
+    });
+    return { source: src.repoFull, sourceSubdir: normalized, hasUpdate };
+  });
+}
+
 /** Pull the upstream version into the library in place (replace, re-key). */
 export async function updateSkill(
   hash: string
@@ -814,23 +872,18 @@ export async function updateSkill(
     );
   return withClone(src.gitUrl, (tmp) => {
     const slug = slugOf(rec.name);
-    const dir = findSkillDir(tmp, slug);
+    const dir = sourceSkillDir(tmp, slug, rec.source_subdir);
     // Safety: only overwrite when the located dir is CONFIDENTLY the skill we're
     // updating. When findSkillDir can't match by name it falls back to the first
     // SKILL.md-bearing dir (a *sibling* skill) or the clone root — overwriting
     // from either would replace this skill with a different one (the clobber
     // bug). A SKILL.md alone isn't enough (a sibling has one too).
-    if (!dirMatchesSkill(dir, slug)) {
-      throw new Error(
-        "Couldn't determine this skill's folder in its source repo (it may be a monorepo, or the folder was renamed); the update was aborted to avoid overwriting it with a different skill."
-      );
-    }
     if (hashDir(dir) === hash) return { updated: false, source: src.repoFull };
     const dest = rec.central_path as string;
     assertWritable(dest);
-    // Snapshot the whole library to git before we replace any files, so a bad
-    // update is always one "restore" away. Best-effort; never blocks the update.
-    snapshotLibrary(`before update: ${rec.name}`);
+    // Snapshot this skill to git before replacing its files, so a bad update is
+    // always one "restore" away without capturing edits from unrelated skills.
+    snapshotLibrary(`before update: ${rec.name}`, [dest]);
     // Replace contents in place — keep the dir name so symlink targets stay valid.
     for (const e of fs.readdirSync(dest)) {
       fs.rmSync(path.join(dest, e), { recursive: true, force: true });

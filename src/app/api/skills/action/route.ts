@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { handle, fail } from "@/lib/api";
-import { updateSkill } from "@/lib/marketplace";
+import { linkSkillSource, updateSkill } from "@/lib/marketplace";
 import {
   adopt,
   promote,
@@ -15,6 +15,9 @@ import {
   syncLocalChange,
   park,
   remove,
+  trashSkill,
+  restoreTrashedSkill,
+  purgeTrashedSkill,
   createSkill,
   renameSkill,
   setProvenance,
@@ -73,6 +76,14 @@ export async function POST(req: NextRequest) {
       );
     case "updateSkill": // 从上游拉取最新版本，替换库里副本
       return handle(() => updateSkill(hash));
+    case "linkSource": // 验证并保存仓库 + 仓库内 skill 目录
+      return handle(() =>
+        linkSkillSource(
+          hash,
+          String(body.gitUrl || ""),
+          String(body.sourceSubdir || "")
+        )
+      );
     case "syncLocalChange": // 库里被本地改动后，重新拷贝到各 agent 并更新 hash
       return handle(() => {
         const r = syncLocalChange(hash);
@@ -97,6 +108,15 @@ export async function POST(req: NextRequest) {
       return handle(() => {
         remove(hash);
         return { deleted: hash };
+      });
+    case "trash": // 移到回收站（可恢复）
+      return handle(() => trashSkill(hash));
+    case "restoreTrash": // 从回收站恢复
+      return handle(() => restoreTrashedSkill(hash));
+    case "purgeTrash": // 回收站内永久删除
+      return handle(() => {
+        purgeTrashedSkill(hash);
+        return { purged: hash };
       });
     case "new": // 新建技能
       return handle(() =>

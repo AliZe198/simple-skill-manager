@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { libraryDir, assertWritable, agentRoot, loadConfig, saveConfig, isInsideRoot } from "./config";
+import { libraryDir, trashDir, assertWritable, agentRoot, loadConfig, saveConfig, isInsideRoot } from "./config";
 import { detectAgents, getAgent } from "./agents";
 import { scanAll, groupByHash } from "./scan";
 import { readSkillLock, sourceForNames, repoSlugFromGitUrl } from "./sources";
@@ -19,6 +19,10 @@ import {
   allTargets,
   upsertTarget,
   deleteTarget,
+  putTrashedSkill,
+  getTrashedSkill,
+  allTrashedSkills,
+  deleteTrashedSkill,
 } from "./db";
 import type {
   AgentConfig,
@@ -28,6 +32,7 @@ import type {
   Occurrence,
   Provenance,
   SkillRow,
+  TrashedSkill,
   TargetMode,
 } from "./types";
 
@@ -106,6 +111,7 @@ export function buildOverview(): SkillRow[] {
       centralPath: rec?.central_path ?? null,
       provenance,
       gitUrl: rec?.git_url ?? src?.sourceUrl,
+      sourceSubdir: rec?.source_subdir ?? undefined,
       source,
       tags: rec ? safeJson(rec.tags) : [],
       occurrences,
@@ -495,7 +501,7 @@ export function removeFromLibrary(hash: string): void {
     deleteSkill(hash);
     return;
   }
-  snapshotLibrary(`before remove-from-library: ${rec.name}`);
+  snapshotLibrary(`before remove-from-library: ${rec.name}`, [rec.central_path]);
   for (const t of targetsFor(hash)) {
     if (fs.existsSync(t.target_path)) {
       assertWritable(t.target_path);
@@ -538,7 +544,8 @@ function centralPathClaimedByOthers(hash: string, centralPath: string): boolean 
 /** Delete a skill: remove targets, library copy, and any un-adopted originals. */
 export function remove(hash: string): void {
   const rec = getSkill(hash);
-  if (rec?.central_path) snapshotLibrary(`before delete: ${rec.name}`);
+  if (rec?.central_path)
+    snapshotLibrary(`before delete: ${rec.name}`, [rec.central_path]);
   for (const t of targetsFor(hash)) removeTarget(hash, t.agent_id);
   if (rec?.central_path) {
     if (!centralPathClaimedByOthers(hash, rec.central_path))
@@ -551,6 +558,161 @@ export function remove(hash: string): void {
     }
   }
   deleteSkill(hash);
+}
+
+/* --------------------------------------------------------------------- *
+ *  RECOVERABLE TRASH
+ * --------------------------------------------------------------------- */
+
+/** Move a managed skill out of every agent and into the recoverable trash. */
+export function trashSkill(hash: string): TrashedSkill {
+  const rec = getSkill(hash);
+  if (!rec?.central_path || !fs.existsSync(rec.central_path)) {
+    throw new Error("Only a skill in My Library can be moved to Trash.");
+  }
+  if (getTrashedSkill(hash)) throw new Error("This skill is already in Trash.");
+
+  snapshotLibrary(`before trash: ${rec.name}`, [rec.central_path]);
+  const targetAgentIds = targetsFor(hash).map((t) => t.agent_id);
+  const root = trashDir();
+  fs.mkdirSync(root, { recursive: true });
+  const dest = path.join(root, `${slugify(rec.name)}-${shortHash(hash)}`);
+  assertWritable(dest);
+  if (fs.existsSync(dest)) {
+    throw new Error("A recoverable copy with the same content already exists in Trash.");
+  }
+
+  putTrashedSkill({
+    content_hash: rec.content_hash,
+    name: rec.name,
+    description: rec.description,
+    provenance: rec.provenance,
+    git_url: rec.git_url,
+    source_subdir: rec.source_subdir,
+    tags: rec.tags,
+    favorited: rec.favorited,
+    trash_path: dest,
+    original_dir: path.basename(rec.central_path),
+    target_agent_ids: JSON.stringify(targetAgentIds),
+    deleted_at: Date.now(),
+  });
+
+  let moved = false;
+  try {
+    for (const agentId of targetAgentIds) removeTarget(hash, agentId);
+    fs.renameSync(rec.central_path, dest);
+    moved = true;
+    deleteSkill(hash);
+  } catch (e) {
+    if (moved && fs.existsSync(dest) && !fs.existsSync(rec.central_path)) {
+      try {
+        fs.renameSync(dest, rec.central_path);
+      } catch {
+        /* Leave the trash record in place if the file move cannot be rolled back. */
+      }
+    }
+    if (fs.existsSync(rec.central_path)) deleteTrashedSkill(hash);
+    for (const agentId of targetAgentIds) {
+      try {
+        createTarget(hash, agentId);
+      } catch {
+        /* The original files and DB row remain; the user can retry manually. */
+      }
+    }
+    throw e;
+  }
+  return trashRow(getTrashedSkill(hash)!);
+}
+
+/** Restore files and best-effort re-enable the agents that used the skill. */
+export function restoreTrashedSkill(hash: string): {
+  skill: SkillRow;
+  failedAgentIds: string[];
+} {
+  const rec = getTrashedSkill(hash);
+  if (!rec) throw new Error("The trashed skill no longer exists.");
+  if (!fs.existsSync(rec.trash_path)) {
+    throw new Error("The recoverable files are missing from Trash.");
+  }
+  const actualHash = hashDir(rec.trash_path);
+  const dest = libraryDestFor(rec.name, actualHash);
+  assertWritable(dest);
+  let moved = false;
+  let inserted = false;
+  try {
+    fs.renameSync(rec.trash_path, dest);
+    moved = true;
+    upsertSkill({
+      contentHash: actualHash,
+      name: rec.name,
+      description: rec.description,
+      centralPath: dest,
+      provenance: rec.provenance,
+      gitUrl: rec.git_url,
+      sourceSubdir: rec.source_subdir,
+      favorited: !!rec.favorited,
+      tags: safeJson(rec.tags),
+    });
+    inserted = true;
+    deleteTrashedSkill(hash);
+  } catch (e) {
+    if (inserted) deleteSkill(actualHash);
+    if (moved && fs.existsSync(dest) && !fs.existsSync(rec.trash_path)) {
+      try {
+        fs.renameSync(dest, rec.trash_path);
+      } catch {
+        /* Keep the DB trash record so the mismatch remains visible to the user. */
+      }
+    }
+    throw e;
+  }
+
+  const failedAgentIds: string[] = [];
+  for (const agentId of safeJson(rec.target_agent_ids)) {
+    try {
+      createTarget(actualHash, agentId);
+    } catch {
+      failedAgentIds.push(agentId);
+    }
+  }
+  return { skill: findRow(actualHash), failedAgentIds };
+}
+
+/** Permanently remove one recoverable copy. This is intentionally irreversible. */
+export function purgeTrashedSkill(hash: string): void {
+  const rec = getTrashedSkill(hash);
+  if (!rec) throw new Error("The trashed skill no longer exists.");
+  const root = path.resolve(trashDir());
+  const target = path.resolve(rec.trash_path);
+  if (!isInsideRoot(root, target)) {
+    throw new Error("Refusing to delete a path outside the skill Trash folder.");
+  }
+  rmAny(target);
+  if (fs.existsSync(target)) {
+    throw new Error("The skill files could not be removed from Trash.");
+  }
+  deleteTrashedSkill(hash);
+}
+
+export function listTrashedSkills(): TrashedSkill[] {
+  return allTrashedSkills().map(trashRow);
+}
+
+function trashRow(
+  rec: NonNullable<ReturnType<typeof getTrashedSkill>>
+): TrashedSkill {
+  return {
+    contentHash: rec.content_hash,
+    name: rec.name,
+    description: rec.description,
+    provenance: rec.provenance,
+    gitUrl: rec.git_url ?? undefined,
+    sourceSubdir: rec.source_subdir ?? undefined,
+    tags: safeJson(rec.tags),
+    deletedAt: rec.deleted_at,
+    previousAgentIds: safeJson(rec.target_agent_ids),
+    fileExists: fs.existsSync(rec.trash_path),
+  };
 }
 
 /* --------------------------------------------------------------------- *
@@ -674,7 +836,13 @@ export function duplicateGroups(): DupGroup[] {
 export function mergeDuplicates(keepHash: string, dropHashes: string[]): SkillRow {
   const keep = getSkill(keepHash);
   if (!keep?.central_path) throw new Error("The kept skill is not in the library.");
-  snapshotLibrary(`before merge-duplicates: ${keep.name}`);
+  const snapshotPaths = [
+    keep.central_path,
+    ...dropHashes
+      .map((hash) => getSkill(hash)?.central_path)
+      .filter((candidate): candidate is string => Boolean(candidate)),
+  ];
+  snapshotLibrary(`before merge-duplicates: ${keep.name}`, snapshotPaths);
   for (const dropHash of dropHashes) {
     if (dropHash === keepHash) continue;
     const agentIds = targetsFor(dropHash)

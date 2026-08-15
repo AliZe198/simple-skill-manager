@@ -27,6 +27,8 @@ export const DICT = {
   act_enable: { zh: "启用", en: "Enable" },
   act_disable: { zh: "停用", en: "Disable" },
   act_remove_lib: { zh: "移出我的库", en: "Remove from Library" },
+  act_move_trash: { zh: "移到回收站", en: "Move to Trash" },
+  act_restore: { zh: "恢复", en: "Restore" },
   act_delete_perm: { zh: "彻底删除", en: "Delete permanently" },
   act_move_to_library: { zh: "移动到我的库", en: "Move to My Library" },
   // update checking
@@ -36,6 +38,23 @@ export const DICT = {
   upd_update: { zh: "更新", en: "Update" },
   upd_from: { zh: "来自", en: "from" },
   upd_done: { zh: "已更新", en: "Updated" },
+  upd_no_source: { zh: "无法检查", en: "Can't check" },
+  upd_check_error: { zh: "检查失败", en: "Check failed" },
+  upd_summary: {
+    zh: "{u} 个有更新 · {c} 个最新 · {n} 个无法检查 · {e} 个失败",
+    en: "{u} update(s) · {c} current · {n} can't check · {e} failed",
+  },
+  source_link: { zh: "设置更新来源", en: "Set update source" },
+  source_title: { zh: "设置更新来源", en: "Set update source" },
+  source_repo_label: { zh: "GitHub 仓库", en: "GitHub repository" },
+  source_repo_ph: { zh: "https://github.com/owner/repo", en: "https://github.com/owner/repo" },
+  source_subdir_label: { zh: "Skill 所在目录", en: "Skill folder" },
+  source_subdir_ph: { zh: "例如 .opencode/skills/impeccable", en: "e.g. .opencode/skills/impeccable" },
+  source_subdir_hint: {
+    zh: "多 Agent 仓库必须填准确目录；保存前会先验证名字，不会直接覆盖本地文件。",
+    en: "For multi-agent repos, enter the exact folder. The name is verified before saving; local files are not overwritten.",
+  },
+  source_linked: { zh: "更新来源已保存", en: "Update source saved" },
   upd_overwrite_local_body: {
     zh: "这个技能在库里有未同步的本地改动。更新会用上游版本覆盖这些改动（更新前会自动保留一个本地快照，可恢复）。继续更新？",
     en: "This skill has unsynced local edits in the library. Updating overwrites them with the upstream version (a local snapshot is taken first, so it's recoverable). Continue?",
@@ -128,6 +147,17 @@ export const DICT = {
   lbl_builtin_of: { zh: "属于哪个 Agent", en: "Built-in of" },
   // My Library zones: my own skills vs agent-bundled (quarantined) skills.
   zone_mine: { zh: "我的技能", en: "My skills" },
+  zone_trash: { zh: "回收站", en: "Trash" },
+  trash_empty: { zh: "回收站是空的", en: "Trash is empty" },
+  trash_moved: { zh: "已移到回收站", en: "Moved to Trash" },
+  trash_restored: { zh: "已恢复", en: "Restored" },
+  trash_restore_partial: {
+    zh: "文件已恢复，但有 {n} 个 Agent 因目录冲突没有重新启用",
+    en: "Files restored, but {n} agent(s) weren't re-enabled because of path conflicts",
+  },
+  trash_deleted_at: { zh: "删除时间", en: "Deleted" },
+  trash_prev_agents: { zh: "之前启用", en: "Previously enabled" },
+  trash_files_missing: { zh: "恢复文件已丢失", en: "Recovery files are missing" },
   // dedupe
   dedup_title: { zh: "重复技能", en: "Duplicate skills" },
   dedup_hint: {
@@ -311,6 +341,16 @@ export const DICT = {
   confirm_remove_body: {
     zh: "退出统一管理，但会在用到它的 Agent 里保留一份真实副本（不删文件）。之后可重新导入。",
     en: "Stops managing it, but leaves a real copy in the agents that used it (files kept). You can re-import later.",
+  },
+  confirm_trash_title: { zh: "移到回收站", en: "Move to Trash" },
+  confirm_trash_body: {
+    zh: "会从所有 Agent 中停用，并把中央库文件移到回收站。名称、标签、来源和之前启用的 Agent 都会保留，可以随时恢复。",
+    en: "Disables it in every agent and moves the library files to Trash. Its name, tags, source and previous agents are kept so it can be restored.",
+  },
+  confirm_purge_title: { zh: "永久删除", en: "Delete permanently" },
+  confirm_purge_body: {
+    zh: "这会永久删除回收站里的文件，无法恢复。请输入技能名称确认：",
+    en: "This permanently deletes the files in Trash and cannot be undone. Type the skill name to confirm:",
   },
   confirm_delete_title: { zh: "彻底删除", en: "Delete permanently" },
   confirm_delete_body: {
