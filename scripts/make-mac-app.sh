@@ -128,8 +128,10 @@ npm install && npm run build
 
 Then open this app again."
 
-[ -d .next ] || \
-  fail "No build yet.
+[ -f .next/BUILD_ID ] && [ -f .next/required-server-files.json ] || \
+  fail "No production build is available.
+
+This can happen after running the development server.
 
 Open Terminal and run:
 cd $REPO
