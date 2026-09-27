@@ -43,11 +43,30 @@ type View = "rendered" | "raw";
 export function SkillDetailModal({
   hash,
   skill,
+  update,
+  checkingUpdates = false,
+  onManageTags,
+  onManageSource,
+  onCheckUpdates,
+  onUpdate,
+  onSync,
   onTrash,
   onClose,
 }: {
   hash: string;
   skill?: SkillRow;
+  update?: {
+    hasUpdate: boolean;
+    source: string | null;
+    status: "update" | "current" | "no-source" | "error";
+    error?: string;
+  };
+  checkingUpdates?: boolean;
+  onManageTags?: () => void;
+  onManageSource?: () => void;
+  onCheckUpdates?: () => void;
+  onUpdate?: () => void;
+  onSync?: () => void;
   onTrash?: () => void;
   onClose: () => void;
 }) {
@@ -63,6 +82,14 @@ export function SkillDetailModal({
   const body = useMemo(
     () => (data?.readme ? stripFrontmatter(data.readme) : ""),
     [data?.readme]
+  );
+  const hasManagement = Boolean(
+    skill &&
+      (onManageTags ||
+        onManageSource ||
+        onCheckUpdates ||
+        onUpdate ||
+        onSync)
   );
 
   function copyPath(p: string) {
@@ -147,7 +174,7 @@ export function SkillDetailModal({
 
             {data.description && <ClampedText text={data.description} />}
 
-            {skill?.source && (
+            {!hasManagement && skill && skill.source && (
               <MetaBlock label={t("detail_source")}>
                 {skill.gitUrl ? (
                   <a
@@ -158,15 +185,19 @@ export function SkillDetailModal({
                   >
                     {skill.source} ↗
                   </a>
-                ) : (
+                ) : skill.source ? (
                   <span className="break-all font-mono text-xs">
                     {skill.source}
+                  </span>
+                ) : (
+                  <span className="text-xs text-ink-muted">
+                    {t("source_none")}
                   </span>
                 )}
               </MetaBlock>
             )}
 
-            {data.tags.length > 0 && (
+            {!hasManagement && data.tags.length > 0 && (
               <MetaBlock label={t("lbl_tags")}>
                 <div className="flex flex-wrap gap-1">
                   {data.tags.map((tg) => (
@@ -179,6 +210,127 @@ export function SkillDetailModal({
                   ))}
                 </div>
               </MetaBlock>
+            )}
+
+            {hasManagement && skill && (
+              <section className="shrink-0 overflow-hidden rounded-bubble border-2 border-line/35 bg-white/55">
+                <div className="border-b border-line/25 bg-content/70 px-3 py-2.5">
+                  <h3 className="text-sm font-extrabold text-ink-header">
+                    {t("detail_manage")}
+                  </h3>
+                </div>
+
+                {(skill.source || onManageSource) && (
+                  <ManagementRow
+                    label={t("detail_source")}
+                    action={
+                      onManageSource ? (
+                        <PanelAction onClick={onManageSource}>
+                          {skill.gitUrl ? t("source_relink") : t("source_link")}
+                        </PanelAction>
+                      ) : null
+                    }
+                  >
+                    {skill.gitUrl ? (
+                      <a
+                        href={skill.gitUrl.replace(/\.git$/, "")}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={skill.source ?? skill.gitUrl}
+                        className="block truncate font-mono text-xs font-bold text-mint-active underline-offset-2 hover:underline"
+                      >
+                        {skill.source ?? skill.gitUrl}
+                      </a>
+                    ) : skill.source ? (
+                      <span className="block truncate font-mono text-xs text-ink-body">
+                        {skill.source}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-ink-muted">
+                        {t("source_none")}
+                      </span>
+                    )}
+                  </ManagementRow>
+                )}
+
+                {(data.tags.length > 0 || onManageTags) && (
+                  <ManagementRow
+                    label={t("lbl_tags")}
+                    action={
+                      onManageTags ? (
+                        <PanelAction onClick={onManageTags}>
+                          {t("tag_edit")}
+                        </PanelAction>
+                      ) : null
+                    }
+                  >
+                    {data.tags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {data.tags.map((tg) => (
+                          <span
+                            key={tg}
+                            className="badge bg-mint-light text-mint-active"
+                          >
+                            #{tg}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-ink-muted">
+                        {t("tag_none")}
+                      </span>
+                    )}
+                  </ManagementRow>
+                )}
+
+                {(onCheckUpdates || onUpdate) && (
+                  <ManagementRow
+                    label={t("detail_update_status")}
+                    action={
+                      update?.hasUpdate && onUpdate ? (
+                        <PanelAction tone="primary" onClick={onUpdate}>
+                          {t("upd_update")}
+                        </PanelAction>
+                      ) : update?.status === "no-source" && onManageSource ? (
+                        <PanelAction onClick={onManageSource}>
+                          {t("source_link")}
+                        </PanelAction>
+                      ) : onCheckUpdates ? (
+                        <PanelAction
+                          disabled={checkingUpdates}
+                          onClick={onCheckUpdates}
+                        >
+                          {checkingUpdates
+                            ? t("upd_checking")
+                            : update
+                              ? t("update_center_recheck")
+                              : t("upd_check")}
+                        </PanelAction>
+                      ) : null
+                    }
+                  >
+                    <UpdateStatus
+                      checking={checkingUpdates}
+                      update={update}
+                    />
+                  </ManagementRow>
+                )}
+
+                {skill.localChanged && onSync && (
+                  <ManagementRow
+                    label={t("update_center_local")}
+                    action={
+                      <PanelAction onClick={onSync}>
+                        {t("sync_local_btn")}
+                      </PanelAction>
+                    }
+                  >
+                    <span className="inline-flex rounded-chip bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700">
+                      {t("sync_local_badge")}
+                    </span>
+                  </ManagementRow>
+                )}
+              </section>
             )}
 
             {data.path && (
@@ -274,6 +426,97 @@ function MetaBlock({
       </div>
       {children}
     </div>
+  );
+}
+
+function ManagementRow({
+  label,
+  action,
+  children,
+}: {
+  label: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 border-b border-line/20 px-3 py-3 last:border-b-0">
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 text-[11px] font-extrabold text-ink-secondary">
+          {label}
+        </div>
+        {children}
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
+    </div>
+  );
+}
+
+function PanelAction({
+  children,
+  tone = "default",
+  ...props
+}: {
+  children: React.ReactNode;
+  tone?: "default" | "primary";
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "inline-flex min-h-8 max-w-[7.5rem] items-center justify-center rounded-pill border-2 px-3 py-1 text-center text-xs font-extrabold leading-tight transition-all focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focusYellow/30 disabled:cursor-not-allowed disabled:opacity-50",
+        tone === "primary"
+          ? "border-mint-active bg-mint text-white shadow-soft hover:-translate-y-px hover:bg-mint-hover"
+          : "border-line/45 bg-content text-ink-body shadow-soft hover:-translate-y-px hover:border-mint hover:text-mint-active"
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function UpdateStatus({
+  checking,
+  update,
+}: {
+  checking: boolean;
+  update?: {
+    hasUpdate: boolean;
+    source: string | null;
+    status: "update" | "current" | "no-source" | "error";
+    error?: string;
+  };
+}) {
+  const { t } = useLang();
+
+  let label = t("detail_not_checked");
+  let tone = "bg-stone-100 text-ink-muted";
+
+  if (checking) {
+    label = t("upd_checking");
+  } else if (update?.hasUpdate) {
+    label = t("upd_available");
+    tone = "bg-amber-50 text-amber-700";
+  } else if (update?.status === "error") {
+    label = update.error || t("upd_check_error");
+    tone = "bg-red-50 text-status-error-active";
+  } else if (update?.status === "no-source") {
+    label = t("update_center_no_source");
+  } else if (update?.status === "current") {
+    label = t("upd_none");
+    tone = "bg-mint-light text-mint-active";
+  }
+
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full rounded-chip px-2 py-1 text-xs font-bold leading-snug",
+        tone
+      )}
+      title={label}
+    >
+      <span className="truncate">{label}</span>
+    </span>
   );
 }
 

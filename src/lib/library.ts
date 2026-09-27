@@ -53,10 +53,50 @@ export function buildOverview(): SkillRow[] {
     }
   }
 
-  const grouped = groupByHash(scanAll());
-  const byHash = new Map(grouped.map((g) => [g.hash, g]));
   const dbSkills = allSkills();
   const dbByHash = new Map(dbSkills.map((s) => [s.content_hash, s]));
+  const dbTargets = allTargets();
+
+  // A managed target keeps belonging to its DB skill even when its bytes have
+  // changed. Content hashes identify versions, not durable ownership: editing
+  // the library changes every symlink's scan hash, and editing a copy-mode
+  // target changes that copy's hash. If we group those scans by their new hash
+  // first, they appear as brand-new, unimported skills in Discover.
+  //
+  // Reconcile by the paths we own before hash-grouping the remaining scans:
+  // target_path identifies both symlink and copy targets, while linkTarget →
+  // central_path is a recovery fallback for a managed symlink whose target DB
+  // row survived but whose targets row did not.
+  const targetByPath = new Map(
+    dbTargets.map((t) => [pathKey(t.target_path), t])
+  );
+  const skillByCentralPath = new Map(
+    dbSkills
+      .filter((s) => s.central_path)
+      .map((s) => [pathKey(s.central_path as string), s.content_hash])
+  );
+  const managedOccurrences = new Map<string, Occurrence[]>();
+  const unmanagedScans = [];
+  for (const raw of scanAll()) {
+    const target = targetByPath.get(pathKey(raw.occurrence.foundPath));
+    const linkedHash = raw.occurrence.linkTarget
+      ? skillByCentralPath.get(pathKey(raw.occurrence.linkTarget))
+      : undefined;
+    const managedHash = target?.content_hash ?? linkedHash;
+    if (!managedHash || !dbByHash.has(managedHash)) {
+      unmanagedScans.push(raw);
+      continue;
+    }
+    const occurrences = managedOccurrences.get(managedHash) ?? [];
+    occurrences.push({
+      ...raw.occurrence,
+      kind: target?.mode === "copy" ? "copy-of-library" : raw.occurrence.kind,
+    });
+    managedOccurrences.set(managedHash, occurrences);
+  }
+
+  const grouped = groupByHash(unmanagedScans);
+  const byHash = new Map(grouped.map((g) => [g.hash, g]));
   const lock = readSkillLock();
 
   const hashes = new Set<string>([
@@ -68,7 +108,10 @@ export function buildOverview(): SkillRow[] {
   for (const hash of hashes) {
     const g = byHash.get(hash);
     const rec = dbByHash.get(hash);
-    const occurrences: Occurrence[] = g?.occurrences ?? [];
+    const occurrences: Occurrence[] = [
+      ...(g?.occurrences ?? []),
+      ...(managedOccurrences.get(hash) ?? []),
+    ];
 
     // Reconcile DB against the filesystem: a target whose link/copy was
     // deleted out-of-band must NOT show as active, and a skill whose library
@@ -101,7 +144,12 @@ export function buildOverview(): SkillRow[] {
       ...occurrences.map((o) => path.basename(o.foundPath)),
       rec?.central_path ? path.basename(rec.central_path) : "",
     ]);
-    const source = src?.source ?? repoSlugFromGitUrl(rec?.git_url);
+    // "自己维护 / 不关联" is an explicit opt-out. Do not rehydrate an
+    // update source from the install lock after the user disconnects it.
+    const source =
+      provenance === "self-authored"
+        ? undefined
+        : src?.source ?? repoSlugFromGitUrl(rec?.git_url);
 
     rows.push({
       id: hash,
@@ -110,8 +158,14 @@ export function buildOverview(): SkillRow[] {
       contentHash: hash,
       centralPath: rec?.central_path ?? null,
       provenance,
-      gitUrl: rec?.git_url ?? src?.sourceUrl,
-      sourceSubdir: rec?.source_subdir ?? undefined,
+      gitUrl:
+        provenance === "self-authored"
+          ? undefined
+          : rec?.git_url ?? src?.sourceUrl,
+      sourceSubdir:
+        provenance === "self-authored"
+          ? undefined
+          : rec?.source_subdir ?? undefined,
       source,
       tags: rec ? safeJson(rec.tags) : [],
       occurrences,
@@ -128,6 +182,11 @@ export function buildOverview(): SkillRow[] {
     return a.name.localeCompare(b.name);
   });
   return rows;
+}
+
+function pathKey(p: string): string {
+  const resolved = path.resolve(p);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
 function safeJson(s: string): string[] {
@@ -909,6 +968,16 @@ export function createSkill(input: {
 
 export function setProvenance(hash: string, provenance: Provenance): SkillRow {
   setSkillFields(hash, { provenance });
+  return findRow(hash);
+}
+
+/** Explicitly opt a skill out of upstream updates. */
+export function disconnectSkillSource(hash: string): SkillRow {
+  setSkillFields(hash, {
+    provenance: "self-authored",
+    gitUrl: null,
+    sourceSubdir: null,
+  });
   return findRow(hash);
 }
 

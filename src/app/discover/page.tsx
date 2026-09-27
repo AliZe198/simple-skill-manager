@@ -8,6 +8,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  SearchInput,
   Spinner,
 } from "@/components/ui";
 import { DiscoverListRow } from "@/components/DiscoverListRow";
@@ -180,11 +181,11 @@ export default function DiscoverPage() {
             </button>
           ))}
         </div>
-        <input
-          className="input w-64"
+        <SearchInput
+          className="w-64"
           placeholder={t("lbl_search")}
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={setQ}
         />
       </div>
 

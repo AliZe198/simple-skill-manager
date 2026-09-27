@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -8,7 +8,11 @@ import {
   dirMatchesSkill,
   assertSafeCloneUrl,
   sourceSkillDir,
+  checkAllUpdates,
+  isGitHubRepoSlug,
 } from "./marketplace";
+import { upsertSkill } from "./db";
+import { hashDir } from "./hash";
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ssm-mkt-"));
@@ -157,5 +161,55 @@ describe("assertSafeCloneUrl (block git RCE transports)", () => {
     ]) {
       expect(() => assertSafeCloneUrl(bad)).toThrow();
     }
+  });
+});
+
+describe("isGitHubRepoSlug (source candidate quality)", () => {
+  it("keeps cloneable owner/repo slugs and rejects registry domains", () => {
+    expect(isGitHubRepoSlug("panniantong/agent-reach")).toBe(true);
+    expect(isGitHubRepoSlug("vercel-labs/agent_skills.js")).toBe(true);
+    expect(isGitHubRepoSlug("skills.volces.com")).toBe(false);
+    expect(isGitHubRepoSlug("owner/repo/skill")).toBe(false);
+    expect(isGitHubRepoSlug("/repo")).toBe(false);
+  });
+});
+
+describe("checkAllUpdates (update eligibility)", () => {
+  let base: string;
+  beforeEach(() => {
+    base = tmp();
+    process.env.SSM_DATA_DIR = path.join(base, "data");
+  });
+  afterEach(() => {
+    delete process.env.SSM_DATA_DIR;
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it("self-authored skills without a source are skipped, not reported as no-source", async () => {
+    // Two adopted skills, neither with a recorded git_url. A self-authored
+    // skill IS its own upstream — reporting it as "no-source" nags the user to
+    // link a repo that doesn't exist, so it must be skipped entirely.
+    const mine = path.join(base, "library", "mine");
+    const dl = path.join(base, "library", "dl");
+    mk(mine);
+    fs.appendFileSync(path.join(mine, "SKILL.md"), "mine"); // distinct hashes
+    mk(dl);
+    upsertSkill({
+      contentHash: hashDir(mine),
+      name: "mine",
+      description: "",
+      centralPath: mine,
+      provenance: "self-authored",
+    });
+    upsertSkill({
+      contentHash: hashDir(dl),
+      name: "dl",
+      description: "",
+      centralPath: dl,
+      provenance: "downloaded",
+    });
+    const out = await checkAllUpdates();
+    expect(out.find((u) => u.name === "mine")).toBeUndefined();
+    expect(out.find((u) => u.name === "dl")?.status).toBe("no-source");
   });
 });

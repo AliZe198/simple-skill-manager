@@ -772,6 +772,10 @@ export async function checkAllUpdates(): Promise<UpdateInfo[]> {
   for (const s of skills) {
     const src = resolveSource(s.git_url);
     if (!src) {
+      // A self-authored skill has no upstream to check against — it IS the
+      // source. Reporting it as "no-source" would nag the user to link a repo
+      // that doesn't exist, so skip it entirely.
+      if (s.provenance === "self-authored") continue;
       out.push({
         hash: s.content_hash,
         name: s.name,
@@ -898,4 +902,34 @@ export async function updateSkill(
     }
     return { updated: true, newHash, source: src.repoFull };
   });
+}
+
+/**
+ * Name-based source candidates for the source modal's "自动寻找来源" button.
+ *
+ * This is the SAFE counterpart to resolveSource()'s no-guessing rule: guessing
+ * never happens implicitly. The user explicitly asks, sees the candidates, and
+ * picks one; linkSkillSource() then clones the chosen repo and verifies it
+ * really contains a skill dir matching this skill's name before anything is
+ * saved — so a wrong pick fails loudly instead of mis-attributing the source.
+ */
+export async function guessSources(name: string): Promise<MarketSkill[]> {
+  const q = name.trim();
+  if (!q) return [];
+  const { skills } = await browseMarketplace(q);
+  const slug = slugOf(q);
+  // Exact name hits first; the rest stay in the registry's popularity order.
+  return skills
+    // skills.sh occasionally returns registry/domain names in `source` even
+    // though this flow can only clone GitHub owner/repo sources. Do not show a
+    // candidate that can never pass linkSkillSource's clone validation.
+    .filter((s) => isGitHubRepoSlug(s.source))
+    .map((s) => ({ s, exact: slugOf(s.name) === slug ? 1 : 0 }))
+    .sort((a, b) => b.exact - a.exact)
+    .slice(0, 8)
+    .map((x) => x.s);
+}
+
+export function isGitHubRepoSlug(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(value.trim());
 }

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { handle, fail } from "@/lib/api";
-import { linkSkillSource, updateSkill } from "@/lib/marketplace";
+import { guessSources, linkSkillSource, updateSkill } from "@/lib/marketplace";
 import {
   adopt,
   promote,
@@ -21,6 +21,7 @@ import {
   createSkill,
   renameSkill,
   setProvenance,
+  disconnectSkillSource,
   setTags,
   buildOverview,
 } from "@/lib/library";
@@ -84,6 +85,10 @@ export async function POST(req: NextRequest) {
           String(body.sourceSubdir || "")
         )
       );
+    case "guessSource": // 按名字列出候选来源（用户明确触发、手动选择后才关联）
+      return handle(() => guessSources(String(body.name || "")));
+    case "disconnectSource": // 自己维护：清除来源，并永久跳过更新检查
+      return handle(() => disconnectSkillSource(hash));
     case "syncLocalChange": // 库里被本地改动后，重新拷贝到各 agent 并更新 hash
       return handle(() => {
         const r = syncLocalChange(hash);

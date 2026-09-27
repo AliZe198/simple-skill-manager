@@ -91,6 +91,45 @@ export function HashTag({ hash }: { hash: string }) {
   );
 }
 
+/**
+ * Search box with a one-click × clear button (appears only when non-empty).
+ * Width classes go on the wrapper via className; the input itself fills it.
+ */
+export function SearchInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const { t } = useLang();
+  return (
+    <div className={cn("relative", className)}>
+      <input
+        className="input w-full pr-8"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {value !== "" && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          aria-label={t("search_clear")}
+          title={t("search_clear")}
+          className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-sm leading-none text-ink-disabled transition-colors hover:bg-line/20 hover:text-ink-body"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function EmptyState({ text }: { text: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-20 text-ink-secondary">

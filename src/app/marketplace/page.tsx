@@ -6,7 +6,7 @@ import cn from "classnames";
 import { fetcher, apiPost, swrOpts } from "@/lib/client";
 import { useLang } from "@/components/LangProvider";
 import { useToast } from "@/components/Toast";
-import { Button, Spinner, EmptyState, ErrorState } from "@/components/ui";
+import { Button, Spinner, EmptyState, ErrorState, SearchInput } from "@/components/ui";
 import type { MarketSkill } from "@/lib/marketplace";
 
 type Tab = "browse" | "git" | "local";
@@ -110,11 +110,11 @@ function BrowseTab() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-ink-disabled">{srcHint}</p>
-        <input
-          className="input w-72"
+        <SearchInput
+          className="w-72"
           placeholder={t("lbl_search")}
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={setQ}
         />
       </div>
 

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { buildFixtureTree } from "./__fixtures__/tree";
+import { setSkillFields } from "./db";
 
 let root: string;
 
@@ -64,6 +65,23 @@ describe("收入库 (adopt)", () => {
     const grouped = buildOverview().map((r) => ({ name: r.name, hash: r.contentHash }));
     const row = adopt(hashOf("impeccable", grouped));
     expect(row.provenance).toBe("downloaded");
+  });
+
+  it("disconnects an update source and marks the skill as self-maintained", async () => {
+    const { buildOverview, adopt, disconnectSkillSource } = await lib();
+    const grouped = buildOverview().map((r) => ({ name: r.name, hash: r.contentHash }));
+    const row = adopt(hashOf("impeccable", grouped));
+    setSkillFields(row.contentHash, {
+      gitUrl: "https://github.com/example/impeccable",
+      sourceSubdir: "skills/impeccable",
+      provenance: "downloaded",
+    });
+
+    const disconnected = disconnectSkillSource(row.contentHash);
+    expect(disconnected.provenance).toBe("self-authored");
+    expect(disconnected.gitUrl).toBeUndefined();
+    expect(disconnected.sourceSubdir).toBeUndefined();
+    expect(disconnected.source).toBeUndefined();
   });
 });
 
@@ -262,6 +280,36 @@ describe("idempotent rescan", () => {
     const a = buildOverview().length;
     const b = buildOverview().length;
     expect(a).toBe(b);
+  });
+
+  it("keeps an edited library skill out of Discover", async () => {
+    const { buildOverview, adopt } = await lib();
+    const grouped = buildOverview().map((r) => ({ name: r.name, hash: r.contentHash }));
+    const row = adopt(hashOf("impeccable", grouped));
+
+    fs.appendFileSync(path.join(row.centralPath!, "SKILL.md"), "\nlocal edit\n");
+
+    const matches = buildOverview().filter((r) => r.name === row.name);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].adopted).toBe(true);
+    expect(matches[0].localChanged).toBe(true);
+  });
+
+  it("keeps a modified copy-mode target out of Discover", async () => {
+    const { buildOverview, adopt, createTarget } = await lib();
+    const grouped = buildOverview().map((r) => ({ name: r.name, hash: r.contentHash }));
+    const row = adopt(hashOf("impeccable", grouped));
+    createTarget(row.contentHash, "kimi");
+    const kimiCopy = path.join(root, ".kimi-code/skills/impeccable");
+
+    fs.appendFileSync(path.join(kimiCopy, "SKILL.md"), "\nKimi-only edit\n");
+
+    const matches = buildOverview().filter((r) => r.name === row.name);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].adopted).toBe(true);
+    expect(
+      matches[0].occurrences.find((o) => o.agentId === "kimi")?.kind
+    ).toBe("copy-of-library");
   });
 });
 

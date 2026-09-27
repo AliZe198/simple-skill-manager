@@ -10,7 +10,8 @@ import { SkillListRow, type UpdateHint } from "@/components/SkillListRow";
 import { TrashPanel } from "@/components/TrashPanel";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DedupPanel } from "@/components/DedupPanel";
-import { Button, EmptyState, ErrorState, Spinner } from "@/components/ui";
+import { Button, EmptyState, ErrorState, SearchInput, Spinner } from "@/components/ui";
+import { UpdateCenterModal } from "@/components/UpdateCenterModal";
 import type { DetectedAgent, SkillRow } from "@/lib/types";
 
 type Status = "all" | "active" | "idle";
@@ -34,6 +35,7 @@ export default function LibraryPage() {
   const [updates, setUpdates] = useState<Map<string, UpdateHint> | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [updateCenterOpen, setUpdateCenterOpen] = useState(false);
 
   async function checkUpdates() {
     setChecking(true);
@@ -92,26 +94,61 @@ export default function LibraryPage() {
     [importedAll, zone]
   );
 
-  function handleChanged() {
-    // Any mutation can invalidate a hash-keyed update result. Source linking is
-    // the important case: the old "no source" badge must disappear immediately.
-    setUpdates(null);
-    void Promise.all([mutate(), mutateTrash()]);
+  function handleChanged(evictHashes?: string[]) {
+    // A mutation invalidates only the update entries of the skills it touched
+    // (update → hash changes; linkSource → the "no source" badge must disappear
+    // immediately). Evict just those; clearing the whole map would hide every
+    // other skill's still-valid "有更新" badge until the next full check.
+    if (evictHashes?.length) evictUpdates(evictHashes);
+    return Promise.all([mutate(), mutateTrash()]);
   }
 
-  // Bulk one-click targets. Both count the current zone only; the builtin
-  // zone never has local edits or updates, so the buttons vanish there.
+  function evictUpdates(hashes: string[]) {
+    setUpdates((prev) => {
+      if (!prev) return prev;
+      const next = new Map(prev);
+      for (const h of hashes) next.delete(h);
+      return next;
+    });
+  }
+
+  // The update center is global to the user's library, so its counts and bulk
+  // actions do not change when the list is filtered or another zone is open.
+  const managedSkills = useMemo(
+    () => importedAll.filter((r) => r.provenance !== "bundled"),
+    [importedAll]
+  );
   const unsynced = useMemo(
-    () => imported.filter((r) => r.localChanged),
-    [imported]
+    () => managedSkills.filter((r) => r.localChanged),
+    [managedSkills]
   );
   const updatable = useMemo(
     () =>
       updates
-        ? imported.filter((r) => updates.get(r.contentHash)?.hasUpdate)
+        ? managedSkills.filter((r) => updates.get(r.contentHash)?.hasUpdate)
         : [],
-    [imported, updates]
+    [managedSkills, updates]
   );
+  const updateStats = useMemo(() => {
+    const managedHashes = new Set(managedSkills.map((r) => r.contentHash));
+    const list = updates
+      ? [...updates.entries()]
+          .filter(([hash]) => managedHashes.has(hash))
+          .map(([, value]) => value)
+      : [];
+    return {
+      update: list.filter((u) => u.status === "update").length,
+      current: list.filter((u) => u.status === "current").length,
+      noSource: list.filter((u) => u.status === "no-source").length,
+      error: list.filter((u) => u.status === "error").length,
+    };
+  }, [managedSkills, updates]);
+  const pendingCenterCount = updatable.length + unsynced.length;
+
+  function clearUpdateResults() {
+    setUpdates(null);
+    toast(t("upd_cleared"), "success");
+  }
 
   // Sequential on purpose: each action rewrites library state on disk, and
   // partial failure shouldn't abort the rest.
@@ -122,18 +159,21 @@ export default function LibraryPage() {
     setBulkBusy(true);
     let ok = 0;
     let fail = 0;
+    const okHashes: string[] = [];
     for (const hash of hashes) {
       try {
         await apiPost("/api/skills/action", { action, hash });
         ok++;
+        okHashes.push(hash);
       } catch {
         fail++;
       }
     }
     setBulkBusy(false);
-    // Updating changes content hashes, so the stale update map can't be
-    // trusted afterwards — clear it and let the user re-check.
-    if (action === "updateSkill") setUpdates(null);
+    // Updating changes content hashes, so those entries in the update map are
+    // stale afterwards. Evict only the ones that actually went through — a
+    // failed (or never-attempted) skill's badge is still valid.
+    if (action === "updateSkill") evictUpdates(okHashes);
     const msg =
       t("bulk_ok_n").replace("{n}", String(ok)) +
       (fail ? " · " + t("bulk_fail_n").replace("{n}", String(fail)) : "");
@@ -255,6 +295,8 @@ export default function LibraryPage() {
             lockedOpen={filtersActive}
             onToggleOpen={() => toggleSuiteOpen(source)}
             onChanged={handleChanged}
+            onCheckUpdates={checkUpdates}
+            checkingUpdates={checking}
             updates={updates}
           />
         ))}
@@ -271,6 +313,8 @@ export default function LibraryPage() {
               skill={skill}
               agents={agents ?? []}
               onChanged={handleChanged}
+              onCheckUpdates={checkUpdates}
+              checkingUpdates={checking}
               update={updates?.get(skill.contentHash)}
             />
           ))}
@@ -303,42 +347,35 @@ export default function LibraryPage() {
               </button>
             ))}
           </div>
-          {unsynced.length > 0 && (
-            <Button
-              variant="default"
-              disabled={bulkBusy}
-              onClick={() =>
-                runBulk(
-                  unsynced.map((r) => r.contentHash),
-                  "syncLocalChange"
-                )
-              }
+          <Button
+            variant="default"
+            disabled={bulkBusy}
+            onClick={() => setUpdateCenterOpen(true)}
+            className="px-4 py-2"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              ⟳ {t("sync_all")} ({unsynced.length})
-            </Button>
-          )}
-          {updatable.length > 0 && (
-            <Button
-              variant="primary"
-              disabled={bulkBusy}
-              onClick={() => {
-                if (updatable.some((r) => r.localChanged)) setBulkConfirm(true);
-                else
-                  runBulk(
-                    updatable.map((r) => r.contentHash),
-                    "updateSkill"
-                  );
-              }}
-            >
-              ⬆ {t("upd_all")} ({updatable.length})
-            </Button>
-          )}
-          <Button variant="default" disabled={checking} onClick={checkUpdates}>
-            {checking ? t("upd_checking") : `⬆ ${t("upd_check")}`}
+              <path d="M20 7h-5V2" />
+              <path d="M20 7a8 8 0 1 0 1.2 7" />
+            </svg>
+            {checking ? t("upd_checking") : t("update_center_open")}
+            {pendingCenterCount > 0 && !checking && (
+              <span className="rounded-pill bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                {pendingCenterCount}
+              </span>
+            )}
           </Button>
             </>
           )}
-          <Button variant="default" onClick={handleChanged}>
+          <Button variant="default" onClick={() => handleChanged()}>
             🔄 {t("act_refresh")}
           </Button>
         </div>
@@ -409,11 +446,11 @@ export default function LibraryPage() {
             ))}
           </div>
         )}
-        <input
-          className="input w-64"
+        <SearchInput
+          className="w-64"
           placeholder={t("lbl_search")}
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={setQ}
         />
       </div>
 
@@ -473,6 +510,37 @@ export default function LibraryPage() {
         </>
       )}
 
+      {updateCenterOpen && (
+        <UpdateCenterModal
+          checked={updates !== null}
+          checking={checking}
+          bulkBusy={bulkBusy}
+          stats={updateStats}
+          updatableCount={updatable.length}
+          unsyncedCount={unsynced.length}
+          onCheck={checkUpdates}
+          onUpdateAll={() => {
+            if (updatable.some((r) => r.localChanged)) {
+              setUpdateCenterOpen(false);
+              setBulkConfirm(true);
+            } else {
+              void runBulk(
+                updatable.map((r) => r.contentHash),
+                "updateSkill"
+              );
+            }
+          }}
+          onSyncAll={() =>
+            void runBulk(
+              unsynced.map((r) => r.contentHash),
+              "syncLocalChange"
+            )
+          }
+          onClear={clearUpdateResults}
+          onClose={() => setUpdateCenterOpen(false)}
+        />
+      )}
+
       {bulkConfirm && (
         <ConfirmDialog
           title={`⬆ ${t("upd_all")}`}
@@ -506,6 +574,8 @@ function LibrarySuite({
   lockedOpen,
   onToggleOpen,
   onChanged,
+  onCheckUpdates,
+  checkingUpdates,
   updates,
 }: {
   source: string;
@@ -514,7 +584,9 @@ function LibrarySuite({
   open: boolean;
   lockedOpen: boolean;
   onToggleOpen: () => void;
-  onChanged: () => void;
+  onChanged: (evictHashes?: string[]) => void | Promise<unknown>;
+  onCheckUpdates: () => void;
+  checkingUpdates: boolean;
   updates: Map<string, UpdateHint> | null;
 }) {
   const { t } = useLang();
@@ -578,6 +650,8 @@ function LibrarySuite({
               skill={skill}
               agents={agents}
               onChanged={onChanged}
+              onCheckUpdates={onCheckUpdates}
+              checkingUpdates={checkingUpdates}
               update={updates?.get(skill.contentHash)}
             />
           ))}

@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { fetcher, swrOpts, apiPost, orderTagNames } from "@/lib/client";
 import { useLang } from "./LangProvider";
 import { useToast } from "./Toast";
-import { Button } from "./ui";
+import { Button, SearchInput } from "./ui";
 
 interface TagRow {
   tag: string;
@@ -147,11 +147,11 @@ export function TagManager() {
             if (e.key === "Enter") createNew();
           }}
         />
-        <input
-          className="input w-36 text-sm"
+        <SearchInput
+          className="w-36 text-sm"
           placeholder={t("tagmgr_search_ph")}
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={setQ}
         />
         <select
           className="rounded-pill border-2 border-line/40 bg-content px-3 py-[7px] text-xs font-bold text-ink-body"
