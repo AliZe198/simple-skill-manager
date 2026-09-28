@@ -12,7 +12,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DedupPanel } from "@/components/DedupPanel";
 import { Button, EmptyState, ErrorState, SearchInput, Spinner } from "@/components/ui";
 import { UpdateCenterModal } from "@/components/UpdateCenterModal";
-import type { DetectedAgent, SkillRow } from "@/lib/types";
+import type { CopyTargetChange, DetectedAgent, SkillRow } from "@/lib/types";
 
 type Status = "all" | "active" | "idle";
 type Layout = "top" | "side";
@@ -36,6 +36,10 @@ export default function LibraryPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkConfirm, setBulkConfirm] = useState(false);
   const [updateCenterOpen, setUpdateCenterOpen] = useState(false);
+  const [copyConfirm, setCopyConfirm] = useState<{
+    skill: SkillRow;
+    change: CopyTargetChange;
+  } | null>(null);
 
   async function checkUpdates() {
     setChecking(true);
@@ -118,9 +122,32 @@ export default function LibraryPage() {
     () => importedAll.filter((r) => r.provenance !== "bundled"),
     [importedAll]
   );
-  const unsynced = useMemo(
-    () => managedSkills.filter((r) => r.localChanged),
+  const copyChanges = useMemo(
+    () =>
+      managedSkills.flatMap((skill) =>
+        (skill.copyChanges ?? []).map((change) => ({ skill, change }))
+      ),
     [managedSkills]
+  );
+  const conflictHashes = useMemo(
+    () =>
+      new Set(
+        copyChanges
+          .filter(({ change }) => change.state === "conflict")
+          .map(({ skill }) => skill.contentHash)
+      ),
+    [copyChanges]
+  );
+  const copyChangeHashes = useMemo(
+    () => new Set(copyChanges.map(({ skill }) => skill.contentHash)),
+    [copyChanges]
+  );
+  const unsynced = useMemo(
+    () =>
+      managedSkills.filter(
+        (r) => r.localChanged && !conflictHashes.has(r.contentHash)
+      ),
+    [managedSkills, conflictHashes]
   );
   const updatable = useMemo(
     () =>
@@ -128,6 +155,10 @@ export default function LibraryPage() {
         ? managedSkills.filter((r) => updates.get(r.contentHash)?.hasUpdate)
         : [],
     [managedSkills, updates]
+  );
+  const bulkUpdatable = useMemo(
+    () => updatable.filter((r) => !copyChangeHashes.has(r.contentHash)),
+    [updatable, copyChangeHashes]
   );
   const updateStats = useMemo(() => {
     const managedHashes = new Set(managedSkills.map((r) => r.contentHash));
@@ -143,7 +174,25 @@ export default function LibraryPage() {
       error: list.filter((u) => u.status === "error").length,
     };
   }, [managedSkills, updates]);
-  const pendingCenterCount = updatable.length + unsynced.length;
+  const pendingCenterCount = updatable.length + unsynced.length + copyChanges.length;
+
+  async function adoptAgentCopy(skill: SkillRow, change: CopyTargetChange) {
+    setBulkBusy(true);
+    try {
+      await apiPost("/api/skills/action", {
+        action: "adoptCopyChange",
+        hash: skill.contentHash,
+        agentId: change.agentId,
+      });
+      toast(t("copy_change_adopted"), "success");
+      evictUpdates([skill.contentHash]);
+      await mutate();
+    } catch (e) {
+      toast((e as Error).message || t("toast_error"), "error");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   function clearUpdateResults() {
     setUpdates(null);
@@ -298,6 +347,7 @@ export default function LibraryPage() {
             onCheckUpdates={checkUpdates}
             checkingUpdates={checking}
             updates={updates}
+            onOpenUpdateCenter={() => setUpdateCenterOpen(true)}
           />
         ))}
         {suites.length > 0 && loose.length > 0 && (
@@ -316,6 +366,7 @@ export default function LibraryPage() {
               onCheckUpdates={checkUpdates}
               checkingUpdates={checking}
               update={updates?.get(skill.contentHash)}
+              onOpenUpdateCenter={() => setUpdateCenterOpen(true)}
             />
           ))}
         </div>
@@ -516,16 +567,18 @@ export default function LibraryPage() {
           checking={checking}
           bulkBusy={bulkBusy}
           stats={updateStats}
-          updatableCount={updatable.length}
+          updatableCount={bulkUpdatable.length}
           unsyncedCount={unsynced.length}
+          copyChanges={copyChanges}
+          agents={agents ?? []}
           onCheck={checkUpdates}
           onUpdateAll={() => {
-            if (updatable.some((r) => r.localChanged)) {
+            if (bulkUpdatable.some((r) => r.localChanged)) {
               setUpdateCenterOpen(false);
               setBulkConfirm(true);
             } else {
               void runBulk(
-                updatable.map((r) => r.contentHash),
+                bulkUpdatable.map((r) => r.contentHash),
                 "updateSkill"
               );
             }
@@ -536,8 +589,36 @@ export default function LibraryPage() {
               "syncLocalChange"
             )
           }
+          onAdoptCopy={(skill, change) => setCopyConfirm({ skill, change })}
           onClear={clearUpdateResults}
           onClose={() => setUpdateCenterOpen(false)}
+        />
+      )}
+
+      {copyConfirm && (
+        <ConfirmDialog
+          title={t("copy_change_confirm_title").replace(
+            "{agent}",
+            agents?.find((a) => a.id === copyConfirm.change.agentId)?.label ??
+              copyConfirm.change.agentId
+          )}
+          body={t(
+            copyConfirm.change.state === "conflict"
+              ? "copy_change_conflict_confirm_body"
+              : "copy_change_confirm_body"
+          ).replace(
+            "{agent}",
+            agents?.find((a) => a.id === copyConfirm.change.agentId)?.label ??
+              copyConfirm.change.agentId
+          )}
+          confirmLabel={t("copy_change_adopt")}
+          danger={copyConfirm.change.state === "conflict"}
+          onCancel={() => setCopyConfirm(null)}
+          onConfirm={() => {
+            const pending = copyConfirm;
+            setCopyConfirm(null);
+            void adoptAgentCopy(pending.skill, pending.change);
+          }}
         />
       )}
 
@@ -548,7 +629,7 @@ export default function LibraryPage() {
             .replace("{n}", String(updatable.length))
             .replace(
               "{m}",
-              String(updatable.filter((r) => r.localChanged).length)
+              String(bulkUpdatable.filter((r) => r.localChanged).length)
             )}
           confirmLabel={t("upd_all")}
           danger={false}
@@ -556,7 +637,7 @@ export default function LibraryPage() {
           onConfirm={() => {
             setBulkConfirm(false);
             runBulk(
-              updatable.map((r) => r.contentHash),
+              bulkUpdatable.map((r) => r.contentHash),
               "updateSkill"
             );
           }}
@@ -577,6 +658,7 @@ function LibrarySuite({
   onCheckUpdates,
   checkingUpdates,
   updates,
+  onOpenUpdateCenter,
 }: {
   source: string;
   rows: SkillRow[];
@@ -588,6 +670,7 @@ function LibrarySuite({
   onCheckUpdates: () => void;
   checkingUpdates: boolean;
   updates: Map<string, UpdateHint> | null;
+  onOpenUpdateCenter: () => void;
 }) {
   const { t } = useLang();
   const nActive = rows.filter((r) => !r.parked).length;
@@ -653,6 +736,7 @@ function LibrarySuite({
               onCheckUpdates={onCheckUpdates}
               checkingUpdates={checkingUpdates}
               update={updates?.get(skill.contentHash)}
+              onOpenUpdateCenter={onOpenUpdateCenter}
             />
           ))}
         </div>

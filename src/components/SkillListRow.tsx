@@ -40,6 +40,7 @@ export function SkillListRow({
   onCheckUpdates,
   checkingUpdates = false,
   update,
+  onOpenUpdateCenter,
 }: {
   skill: SkillRow;
   agents: DetectedAgent[];
@@ -47,6 +48,7 @@ export function SkillListRow({
   onCheckUpdates?: () => void;
   checkingUpdates?: boolean;
   update?: UpdateHint;
+  onOpenUpdateCenter?: () => void;
 }) {
   const { t } = useLang();
   const toast = useToast();
@@ -72,6 +74,10 @@ export function SkillListRow({
   const detected = agents.filter((a) => a.detected && !a.ignored);
   const activeSet = new Set(skill.activeAgentIds);
   const bundled = skill.provenance === "bundled";
+  const hasCopyChange = (skill.copyChanges?.length ?? 0) > 0;
+  const hasCopyConflict = skill.copyChanges?.some(
+    (change) => change.state === "conflict"
+  );
   const builtInAgentIds = [
     ...new Set(skill.occurrences.filter((o) => o.bundled).map((o) => o.agentId)),
   ];
@@ -247,7 +253,7 @@ export function SkillListRow({
               onClick={() => {
                 // Same rule as the menu item: overwriting unsynced local
                 // edits needs a confirm (a snapshot is taken first).
-                if (skill.localChanged) setConfirm("update");
+                if (skill.localChanged || hasCopyChange) setConfirm("update");
                 else
                   run(
                     { action: "updateSkill", hash: skill.contentHash },
@@ -281,7 +287,28 @@ export function SkillListRow({
               {t("upd_check_error")}
             </button>
           )}
-          {!bundled && skill.localChanged && (
+          {!bundled && hasCopyChange && (
+            <button
+              disabled={busy}
+              onClick={onOpenUpdateCenter}
+              className={cn(
+                "badge shrink-0 transition-colors disabled:opacity-50",
+                hasCopyConflict
+                  ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                  : "bg-sky-100 text-sky-700 hover:bg-sky-200"
+              )}
+              title={
+                hasCopyConflict
+                  ? t("copy_change_conflict")
+                  : t("update_center_agent_hint")
+              }
+            >
+              {hasCopyConflict
+                ? `⚠ ${t("copy_change_conflict")}`
+                : `↙ ${t("copy_change_badge")}`}
+            </button>
+          )}
+          {!bundled && skill.localChanged && !hasCopyConflict && (
             <button
               disabled={busy}
               onClick={() =>
@@ -419,7 +446,20 @@ export function SkillListRow({
                 >
                   {t("source_link")}
                 </MenuItem>
-                {skill.localChanged && (
+                {hasCopyChange && onOpenUpdateCenter && (
+                  <MenuItem
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onOpenUpdateCenter();
+                    }}
+                  >
+                    {hasCopyConflict ? "⚠" : "↙"}{" "}
+                    {hasCopyConflict
+                      ? t("copy_change_conflict")
+                      : t("copy_change_badge")}
+                  </MenuItem>
+                )}
+                {skill.localChanged && !hasCopyConflict && (
                   <MenuItem
                     onClick={() => {
                       setMenuOpen(false);
@@ -439,7 +479,7 @@ export function SkillListRow({
                       // Updating replaces the library copy — with unsynced
                       // local edits in it, that's a destructive overwrite the
                       // user must confirm (a git snapshot is taken first).
-                      if (skill.localChanged) setConfirm("update");
+                      if (skill.localChanged || hasCopyChange) setConfirm("update");
                       else
                         run(
                           { action: "updateSkill", hash: skill.contentHash },
@@ -776,7 +816,11 @@ export function SkillListRow({
       {confirm === "update" && (
         <ConfirmDialog
           title={`⬆ ${t("upd_update")} · ${skill.name}`}
-          body={t("upd_overwrite_local_body")}
+          body={t(
+            hasCopyChange
+              ? "upd_overwrite_copy_body"
+              : "upd_overwrite_local_body"
+          )}
           confirmLabel={t("upd_update")}
           danger={false}
           onCancel={() => setConfirm(null)}
@@ -828,7 +872,7 @@ export function SkillListRow({
             update?.hasUpdate
               ? () => {
                   setShowDetail(false);
-                  if (skill.localChanged) setConfirm("update");
+                  if (skill.localChanged || hasCopyChange) setConfirm("update");
                   else
                     void run(
                       { action: "updateSkill", hash: skill.contentHash },
@@ -838,7 +882,7 @@ export function SkillListRow({
               : undefined
           }
           onSync={
-            skill.localChanged
+            skill.localChanged && !hasCopyConflict
               ? () => {
                   setShowDetail(false);
                   void run(

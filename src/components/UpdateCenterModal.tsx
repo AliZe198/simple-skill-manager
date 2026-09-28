@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { CopyTargetChange, DetectedAgent, SkillRow } from "@/lib/types";
 import { Button } from "./ui";
 import { Modal } from "./Modal";
 import { useLang } from "./LangProvider";
@@ -19,9 +20,12 @@ export function UpdateCenterModal({
   stats,
   updatableCount,
   unsyncedCount,
+  copyChanges,
+  agents,
   onCheck,
   onUpdateAll,
   onSyncAll,
+  onAdoptCopy,
   onClear,
   onClose,
 }: {
@@ -31,9 +35,12 @@ export function UpdateCenterModal({
   stats: UpdateCenterStats;
   updatableCount: number;
   unsyncedCount: number;
+  copyChanges: { skill: SkillRow; change: CopyTargetChange }[];
+  agents: DetectedAgent[];
   onCheck: () => void;
   onUpdateAll: () => void;
   onSyncAll: () => void;
+  onAdoptCopy: (skill: SkillRow, change: CopyTargetChange) => void;
   onClear: () => void;
   onClose: () => void;
 }) {
@@ -131,6 +138,77 @@ export function UpdateCenterModal({
               >
                 {t("sync_all")} ({unsyncedCount})
               </Button>
+            </div>
+          )}
+        </section>
+
+        <section className="flex flex-col gap-3 border-t-2 border-dashed border-line/30 pt-5">
+          <div>
+            <h3 className="font-extrabold text-ink-header">
+              {t("update_center_agent")}
+            </h3>
+            <p className="mt-1 text-sm leading-relaxed text-ink-muted">
+              {copyChanges.length > 0
+                ? t("update_center_agent_hint")
+                : t("update_center_agent_done")}
+            </p>
+          </div>
+          {copyChanges.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {copyChanges.map(({ skill, change }) => {
+                const agent = agents.find((a) => a.id === change.agentId);
+                const agentName = agent?.label ?? change.agentId;
+                const conflict = change.state === "conflict";
+                return (
+                  <div
+                    key={`${skill.contentHash}:${change.agentId}`}
+                    className={`flex flex-col gap-3 rounded-bubble border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${
+                      conflict
+                        ? "border-orange-200 bg-orange-50"
+                        : "border-sky-200 bg-sky-50"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-extrabold text-ink-header">
+                          {skill.name}
+                        </span>
+                        <span
+                          className={`badge ${
+                            conflict
+                              ? "bg-orange-100 text-orange-700"
+                              : "bg-sky-100 text-sky-700"
+                          }`}
+                        >
+                          {t(
+                            conflict
+                              ? "copy_change_conflict"
+                              : "copy_change_agent_only"
+                          )}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs font-semibold text-ink-secondary">
+                        {t("copy_change_from_to").replace("{agent}", agentName)}
+                      </p>
+                      {conflict && (
+                        <p className="mt-1 text-xs text-orange-700">
+                          {t("copy_change_conflict_hint").replace(
+                            "{agent}",
+                            agentName
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      variant={conflict ? "default" : "primary"}
+                      disabled={bulkBusy || checking}
+                      onClick={() => onAdoptCopy(skill, change)}
+                    >
+                      {t("copy_change_adopt")}
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>

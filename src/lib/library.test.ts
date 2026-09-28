@@ -310,6 +310,45 @@ describe("idempotent rescan", () => {
     expect(
       matches[0].occurrences.find((o) => o.agentId === "kimi")?.kind
     ).toBe("copy-of-library");
+    expect(matches[0].copyChanges).toEqual([
+      expect.objectContaining({ agentId: "kimi", state: "agent-only" }),
+    ]);
+    expect(matches[0].localChanged).toBe(false);
+  });
+
+  it("marks different library and copy edits as a conflict", async () => {
+    const { buildOverview, adopt, createTarget } = await lib();
+    const grouped = buildOverview().map((r) => ({ name: r.name, hash: r.contentHash }));
+    const row = adopt(hashOf("impeccable", grouped));
+    createTarget(row.contentHash, "kimi");
+    const kimiCopy = path.join(root, ".kimi-code/skills/impeccable");
+
+    fs.appendFileSync(path.join(row.centralPath!, "SKILL.md"), "\nlibrary edit\n");
+    fs.appendFileSync(path.join(kimiCopy, "SKILL.md"), "\nKimi edit\n");
+
+    const changed = buildOverview().find((r) => r.name === row.name)!;
+    expect(changed.localChanged).toBe(true);
+    expect(changed.copyChanges).toEqual([
+      expect.objectContaining({ agentId: "kimi", state: "conflict" }),
+    ]);
+  });
+
+  it("adopts an edited copy into the library and refreshes copy targets", async () => {
+    const { buildOverview, adopt, createTarget, adoptCopyChange } = await lib();
+    const grouped = buildOverview().map((r) => ({ name: r.name, hash: r.contentHash }));
+    const row = adopt(hashOf("impeccable", grouped));
+    createTarget(row.contentHash, "kimi");
+    const kimiCopy = path.join(root, ".kimi-code/skills/impeccable");
+    fs.appendFileSync(path.join(kimiCopy, "SKILL.md"), "\nadopt this Kimi edit\n");
+
+    const result = adoptCopyChange(row.contentHash, "kimi");
+    expect(result.adopted).toBe(true);
+    const changed = buildOverview().find((r) => r.name === row.name)!;
+    expect(changed.contentHash).toBe(result.newHash);
+    expect(changed.localChanged).toBe(false);
+    expect(changed.copyChanges).toEqual([]);
+    expect(fs.readFileSync(path.join(changed.centralPath!, "SKILL.md"), "utf8"))
+      .toContain("adopt this Kimi edit");
   });
 });
 

@@ -96,6 +96,18 @@ export interface SkillRow {
    * not, which is what this flag surfaces. Only meaningful for adopted skills.
    */
   localChanged?: boolean;
+  /**
+   * Edits detected inside managed copy-mode agent directories. Agent-only
+   * changes can be adopted into the library directly; conflicts mean both the
+   * library and that agent copy changed since their last shared baseline.
+   */
+  copyChanges?: CopyTargetChange[];
+}
+
+export interface CopyTargetChange {
+  agentId: string;
+  targetPath: string;
+  state: "agent-only" | "conflict";
 }
 
 /** A recoverable deletion kept outside the live library. */

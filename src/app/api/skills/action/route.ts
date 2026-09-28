@@ -13,6 +13,7 @@ import {
   createTarget,
   removeTarget,
   syncLocalChange,
+  adoptCopyChange,
   park,
   remove,
   trashSkill,
@@ -94,6 +95,11 @@ export async function POST(req: NextRequest) {
         const r = syncLocalChange(hash);
         // After re-key the row lives under the new hash; return that row.
         return r.synced ? findRow(r.newHash as string) : findRow(hash);
+      });
+    case "adoptCopyChange": // 采用 copy-mode agent 里编辑过的版本
+      return handle(() => {
+        const r = adoptCopyChange(hash, String(body.agentId || ""));
+        return r.newHash ? findRow(r.newHash) : findRow(hash);
       });
     case "reveal": // 在 Finder 打开技能所在文件夹
       return handle(() => revealInFinder(hash));

@@ -75,6 +75,37 @@ export const DICT = {
     zh: "没有等待同步的本地改动。",
     en: "No local changes are waiting to be synced.",
   },
+  update_center_agent: { zh: "Agent 副本改动", en: "Agent copy changes" },
+  update_center_agent_hint: {
+    zh: "复制模式的 Agent 里有单独编辑过的版本。采用前会保留中央库快照，不会自动覆盖。",
+    en: "Copy-mode agents contain separately edited versions. The library is snapshotted first and nothing is overwritten automatically.",
+  },
+  update_center_agent_done: {
+    zh: "没有发现 Agent 副本里的独立改动。",
+    en: "No separate edits were found in agent copies.",
+  },
+  copy_change_agent_only: { zh: "待采纳", en: "Ready to adopt" },
+  copy_change_conflict: { zh: "双向冲突", en: "Two-sided conflict" },
+  copy_change_badge: { zh: "Agent 有改动", en: "Agent has edits" },
+  copy_change_from_to: {
+    zh: "来自 {agent} → 中央库",
+    en: "From {agent} → central library",
+  },
+  copy_change_conflict_hint: {
+    zh: "中央库和 {agent} 都改过，需要选择保留哪一版。",
+    en: "Both the library and {agent} changed. Choose which version to keep.",
+  },
+  copy_change_adopt: { zh: "采用 Agent 版本", en: "Use agent version" },
+  copy_change_adopted: { zh: "已采用 Agent 版本", en: "Agent version adopted" },
+  copy_change_confirm_title: { zh: "采用 {agent} 版本？", en: "Use the {agent} version?" },
+  copy_change_confirm_body: {
+    zh: "将用 {agent} 里的版本替换中央库，并重新分发给其他复制模式的 Agent。操作前会自动保留中央库快照。",
+    en: "This replaces the central library with the version from {agent}, then redistributes it to other copy-mode agents. A library snapshot is created first.",
+  },
+  copy_change_conflict_confirm_body: {
+    zh: "中央库和 {agent} 都有不同改动。继续会保留 {agent} 版本，中央库当前版本会先自动保存为可恢复快照，然后再重新分发。",
+    en: "The library and {agent} contain different edits. Continuing keeps the {agent} version; the current library version is saved as a recoverable snapshot before redistribution.",
+  },
   source_link: { zh: "管理更新来源", en: "Manage update source" },
   source_title: { zh: "管理更新来源", en: "Manage update source" },
   source_repo_label: { zh: "GitHub 仓库", en: "GitHub repository" },
@@ -161,6 +192,10 @@ export const DICT = {
   upd_overwrite_local_body: {
     zh: "这个技能在库里有未同步的本地改动。更新会用上游版本覆盖这些改动（更新前会自动保留一个本地快照，可恢复）。继续更新？",
     en: "This skill has unsynced local edits in the library. Updating overwrites them with the upstream version (a local snapshot is taken first, so it's recoverable). Continue?",
+  },
+  upd_overwrite_copy_body: {
+    zh: "这个技能在复制模式的 Agent 里还有单独改动。继续更新会用上游版本覆盖中央库和这些 Agent 副本（更新前会自动保留中央库快照）。建议先在「更新与同步」里处理副本改动。仍要继续？",
+    en: "This skill also has separate edits inside a copy-mode agent. Updating will replace both the library and those agent copies with upstream (the library is snapshotted first). Consider resolving the copy changes in Updates & sync first. Continue anyway?",
   },
   // local-change sync (skill edited in place in the library)
   sync_local_badge: { zh: "改动未同步", en: "Unsynced changes" },

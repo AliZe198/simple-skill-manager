@@ -34,6 +34,7 @@ import type {
   SkillRow,
   TrashedSkill,
   TargetMode,
+  CopyTargetChange,
 } from "./types";
 
 /* --------------------------------------------------------------------- *
@@ -76,6 +77,7 @@ export function buildOverview(): SkillRow[] {
       .map((s) => [pathKey(s.central_path as string), s.content_hash])
   );
   const managedOccurrences = new Map<string, Occurrence[]>();
+  const managedTargetHashes = new Map<string, string>();
   const unmanagedScans = [];
   for (const raw of scanAll()) {
     const target = targetByPath.get(pathKey(raw.occurrence.foundPath));
@@ -93,6 +95,7 @@ export function buildOverview(): SkillRow[] {
       kind: target?.mode === "copy" ? "copy-of-library" : raw.occurrence.kind,
     });
     managedOccurrences.set(managedHash, occurrences);
+    if (target) managedTargetHashes.set(pathKey(target.target_path), raw.hash);
   }
 
   const grouped = groupByHash(unmanagedScans);
@@ -124,8 +127,28 @@ export function buildOverview(): SkillRow[] {
     // update time. Re-hash the library copy now — if it differs, the user edited
     // the skill in place, so copy-mode agents still hold the old bytes and the
     // DB hash is stale. Surface it so the card can offer a manual re-sync.
-    const localChanged =
-      adopted && hashDir(rec!.central_path as string) !== hash;
+    const centralHash = adopted
+      ? hashDir(rec!.central_path as string)
+      : undefined;
+    const localChanged = adopted && centralHash !== hash;
+    const copyChanges: CopyTargetChange[] = [];
+    if (adopted && centralHash) {
+      for (const target of targets) {
+        if (target.mode !== "copy" || !fs.existsSync(target.target_path)) continue;
+        const targetHash =
+          managedTargetHashes.get(pathKey(target.target_path)) ??
+          hashDir(target.target_path);
+        if (targetHash === centralHash) continue;
+        const baseline = target.source_hash ?? hash;
+        const targetChanged = targetHash !== baseline;
+        if (!targetChanged) continue;
+        copyChanges.push({
+          agentId: target.agent_id,
+          targetPath: target.target_path,
+          state: centralHash === baseline ? "agent-only" : "conflict",
+        });
+      }
+    }
 
     // Provenance: DB is authoritative for adopted skills;
     // for discovered-only skills, bundled is derivable, else unknown.
@@ -173,6 +196,7 @@ export function buildOverview(): SkillRow[] {
       parked: adopted && activeAgentIds.length === 0,
       adopted,
       localChanged,
+      copyChanges,
     });
   }
 
@@ -380,6 +404,68 @@ export function syncLocalChange(
     if (t.mode === "copy") createTarget(newHash, t.agent_id);
   }
   return { synced: true, newHash };
+}
+
+/**
+ * Adopt an edited copy-mode agent target as the new canonical library copy.
+ * The existing library version is snapshotted first, replacement is staged in
+ * a verified sibling directory, and only then are other copy targets refreshed.
+ */
+export function adoptCopyChange(
+  hash: string,
+  agentId: string
+): { adopted: boolean; newHash?: string } {
+  const rec = getSkill(hash);
+  if (!rec?.central_path) throw new Error("The skill is not in the library.");
+  const target = targetsFor(hash).find(
+    (t) => t.agent_id === agentId && t.mode === "copy"
+  );
+  if (!target || !fs.existsSync(target.target_path)) {
+    throw new Error("That agent copy is no longer available.");
+  }
+
+  const incomingHash = hashDir(target.target_path);
+  const currentHash = hashDir(rec.central_path);
+  if (incomingHash === currentHash) {
+    const synced = syncLocalChange(hash);
+    return { adopted: synced.synced, newHash: synced.newHash };
+  }
+
+  snapshotLibrary(`before adopting ${agentId} copy: ${rec.name}`, [rec.central_path]);
+  const tmp = `${rec.central_path}.ssm-agent-adopt-${shortHash(incomingHash)}`;
+  const previous = `${rec.central_path}.ssm-agent-adopt-previous`;
+  assertWritable(tmp);
+  assertWritable(previous);
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(previous, { recursive: true, force: true });
+  fs.cpSync(target.target_path, tmp, { recursive: true });
+  if (hashDir(tmp) !== incomingHash) {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    throw new Error("The agent copy changed while it was being adopted. Please retry.");
+  }
+
+  try {
+    fs.renameSync(rec.central_path, previous);
+    fs.renameSync(tmp, rec.central_path);
+  } catch (error) {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    if (!fs.existsSync(rec.central_path) && fs.existsSync(previous)) {
+      fs.renameSync(previous, rec.central_path);
+    }
+    throw error;
+  }
+  rekeySkill(hash, incomingHash);
+  for (const t of targetsFor(incomingHash)) {
+    if (t.mode !== "copy") continue;
+    try {
+      createTarget(incomingHash, t.agent_id);
+    } catch {
+      // The canonical version is already safe in the library. A target that
+      // cannot be refreshed remains visible on the next scan for manual repair.
+    }
+  }
+  fs.rmSync(previous, { recursive: true, force: true });
+  return { adopted: true, newHash: incomingHash };
 }
 
 /* --------------------------------------------------------------------- *
